@@ -1,12 +1,13 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Guftagu",
+    "slug": "guftagu",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
+      "bundleIdentifier": "com.guftagu",
       "supportsTablet": true
     },
     "android": {
@@ -16,10 +17,27 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "package": "com.guftagu",
+      "predictiveBackGestureEnabled": false,
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-font",
+      "expo-splash-screen",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Guftagu needs access to your photos so you can pick a profile picture.",
+          "cameraPermission": "Guftagu needs access to your camera so you can take a profile picture."
+        }
+      ],
+      "expo-secure-store",
+      "expo-web-browser",
+      "expo-video"
+    ],
+    "scheme": "guftagu"
   }
 }
