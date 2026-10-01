@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
-import { ArrowLeft, CalendarDays, Camera, ChevronDown, Images } from 'lucide-react-native';
+import { ArrowLeft, CalendarDays, Camera, ChevronDown, Images, Lock } from 'lucide-react-native';
 import { ReactNode, useEffect, useState } from 'react';
 import {
   Alert,
@@ -46,8 +46,11 @@ const D = {
   back: { x: 16, y: 29, size: 24 }, // node 297:3290 "arrow_back"
   avatar: { x: 156, y: 41, size: 90 }, // node 9:4 "Ellipse 1"
   badge: { x: 204, y: 101, size: 42, icon: 21 }, // nodes 9:5 / 9:6 "camera"
-  form: { x: 16, y: 170, width: 370, gap: 16 }, // node 9:16
-  field: { height: 54, radius: 10 }, // nodes 9:9 / 9:11 / 9:24 / 297:3293
+  // y and gap shrunk from the original Figma 170/16 — the design had 4 fields;
+  // email + phone (read-only, added for the social-sign-in case) make 6, and
+  // the brief is to show every field at once rather than scroll the card.
+  form: { x: 16, y: 155, width: 370, gap: 11 }, // node 9:16
+  field: { height: 46, radius: 10 }, // nodes 9:9 / 9:11 / 9:24 / 297:3293
   textField: { paddingLeft: 20, paddingRight: 18, icon: 19 }, // nodes 9:9 / 9:11
   selectField: { paddingLeft: 15, paddingRight: 13, icon: 24, leadingIcon: 19 }, // nodes 9:24 / 297:3293
   confirm: { x: 18, width: 366, height: 55, radius: 42, bottomGap: 58 }, // node 9:33
@@ -137,11 +140,23 @@ export default function ProfileSetupScreen() {
     };
   }, []);
 
-  const { completeProfile, signOut } = useAuth();
+  const { user, completeProfile, signOut } = useAuth();
   const [saving, setSaving] = useState(false);
   const [photoUri, setPhotoUri] = useState<string>();
   const [photoSheetVisible, setPhotoSheetVisible] = useState(false);
-  const [userName, setUserName] = useState('');
+  // Google/Facebook sign-in already seeds display_name with the provider's name
+  // (UserAuthService::createUser) — OTP sign-in seeds it with guftagu_id instead, since it
+  // has no name to use. That fallback isn't a name the user picked, so leave it blank for
+  // them to fill in rather than prefilling what reads as a random ID.
+  const [userName, setUserName] = useState(
+    user?.display_name && user.display_name !== user.guftagu_id ? user.display_name : '',
+  );
+  // Locked (and left out of what gets saved) when signup already set it — the user can
+  // only fill in whichever one their sign-in method didn't collect.
+  const emailLocked = Boolean(user?.email);
+  const phoneLocked = Boolean(user?.phone);
+  const [email, setEmail] = useState(user?.email ?? '');
+  const [phoneNumber, setPhoneNumber] = useState(user?.phone ?? '');
   const [dateOfBirth, setDateOfBirth] = useState<Date>();
   const [gender, setGender] = useState<string>();
   const [countryCode, setCountryCode] = useState<string>();
@@ -172,6 +187,8 @@ export default function ProfileSetupScreen() {
         // The API takes an ISO date; the field shows DD/MM/YYYY.
         date_of_birth: dateOfBirth.toISOString().slice(0, 10),
         country: selectedCountry?.name ?? null,
+        email: emailLocked ? null : email.trim() || null,
+        phone: phoneLocked ? null : phoneNumber.trim() || null,
       });
     } catch (error) {
       Alert.alert(
@@ -216,6 +233,7 @@ export default function ProfileSetupScreen() {
     borderRadius: px(D.field.radius),
   };
   const fieldFontSize = px(D.fontSize.field);
+
   const chevron = (
     <ChevronDown size={px(D.selectField.icon)} color={colors.black} strokeWidth={2.5} />
   );
@@ -324,6 +342,65 @@ export default function ProfileSetupScreen() {
                 { paddingHorizontal: px(D.textField.paddingLeft), fontSize: fieldFontSize },
               ]}
             />
+          </View>
+
+          {/* Locked when signup (OTP/Google) already gave us this one — e.g. a Google
+              sign-in's email, or an OTP sign-in's phone. Whichever one signup *didn't*
+              collect stays a normal editable field so the user can fill it in themselves
+              (unverified; see setupProfile on the backend). */}
+          <View
+            style={[
+              styles.fieldBox,
+              fieldBoxStyle,
+              emailLocked && styles.fieldRow,
+              emailLocked && styles.lockedField,
+              emailLocked
+                ? { paddingLeft: px(D.textField.paddingLeft), paddingRight: px(D.textField.paddingRight) }
+                : null,
+            ]}
+          >
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              editable={!emailLocked}
+              placeholder="Email"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              style={[
+                styles.textInput,
+                emailLocked ? [styles.lockedFieldText, { flex: 1 }] : { paddingHorizontal: px(D.textField.paddingLeft) },
+                { fontSize: fieldFontSize },
+              ]}
+            />
+            {emailLocked && <Lock size={px(D.textField.icon)} color={colors.textMuted} strokeWidth={1.8} />}
+          </View>
+
+          <View
+            style={[
+              styles.fieldBox,
+              fieldBoxStyle,
+              phoneLocked && styles.fieldRow,
+              phoneLocked && styles.lockedField,
+              phoneLocked
+                ? { paddingLeft: px(D.textField.paddingLeft), paddingRight: px(D.textField.paddingRight) }
+                : null,
+            ]}
+          >
+            <TextInput
+              value={phoneNumber}
+              onChangeText={(text) => setPhoneNumber(text.replace(/\D/g, ''))}
+              editable={!phoneLocked}
+              placeholder="Phone Number"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="phone-pad"
+              style={[
+                styles.textInput,
+                phoneLocked ? [styles.lockedFieldText, { flex: 1 }] : { paddingHorizontal: px(D.textField.paddingLeft) },
+                { fontSize: fieldFontSize },
+              ]}
+            />
+            {phoneLocked && <Lock size={px(D.textField.icon)} color={colors.textMuted} strokeWidth={1.8} />}
           </View>
 
           <SelectField
@@ -478,6 +555,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  lockedField: {
+    backgroundColor: 'rgba(0,0,0,0.04)',
+  },
+  lockedFieldText: {
+    color: colors.textMuted,
   },
   fieldValue: {
     flex: 1,

@@ -43,8 +43,13 @@ export default function RootNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {/* navigationKey: ProfileSetup is in both of the first two groups, so without
+            it a needsProfile → signedOut switch (back button = sign out) keeps the
+            same ProfileSetup instance mounted, now with no user — email/phone unlock
+            and keep the signed-in account's values. A changed key drops the old
+            group's routes, so sign-out lands on Welcome instead. */}
         {status === 'signedOut' ? (
-          <>
+          <Stack.Group navigationKey="signedOut">
             <Stack.Screen name="Welcome" component={WelcomeScreen} />
             <Stack.Screen name="EmailAuth" component={EmailAuthScreen} />
             <Stack.Screen name="PhoneAuth" component={PhoneAuthScreen} />
@@ -52,9 +57,11 @@ export default function RootNavigator() {
                 open it directly. Saving still needs a token, so Confirm only
                 goes through once the account exists — see ProfileSetupScreen. */}
             <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
-          </>
+          </Stack.Group>
         ) : status === 'needsProfile' ? (
-          <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
+          <Stack.Group navigationKey="needsProfile">
+            <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
+          </Stack.Group>
         ) : (
           <>
             <Stack.Screen name="Tabs" component={TabShell} />

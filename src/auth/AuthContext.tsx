@@ -16,9 +16,36 @@ import { api, ApiError } from '../api/client';
 const TOKEN_KEY = 'guftagu.auth.token';
 const DEVICE_KEY = 'guftagu.device.id';
 
+/**
+ * expo-secure-store has no web implementation (Android/iOS only) — calling it on
+ * web throws instead of no-op'ing, so web falls back to localStorage here.
+ */
+const storage = {
+  async getItemAsync(key: string): Promise<string | null> {
+    if (Platform.OS === 'web') return window.localStorage.getItem(key);
+    return SecureStore.getItemAsync(key);
+  },
+  async setItemAsync(key: string, value: string): Promise<void> {
+    if (Platform.OS === 'web') {
+      window.localStorage.setItem(key, value);
+      return;
+    }
+    await SecureStore.setItemAsync(key, value);
+  },
+  async deleteItemAsync(key: string): Promise<void> {
+    if (Platform.OS === 'web') {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    await SecureStore.deleteItemAsync(key);
+  },
+};
+
 export type AuthUser = {
   uuid: string;
   guftagu_id: string;
+  email: string | null;
+  phone: string | null;
   display_name: string | null;
   avatar_url: string | null;
   gender: string | null;
@@ -64,6 +91,9 @@ type AuthContextValue = {
     gender: string;
     date_of_birth: string;
     country?: string | null;
+    // Unverified — only reaches this screen when signup (OTP/social) didn't already set it.
+    email?: string | null;
+    phone?: string | null;
   }) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -76,10 +106,10 @@ const AuthContext = createContext<AuthContextValue | null>(null);
  * look like a new device.
  */
 async function deviceInfo() {
-  let deviceId = await SecureStore.getItemAsync(DEVICE_KEY);
+  let deviceId = await storage.getItemAsync(DEVICE_KEY);
   if (!deviceId) {
     deviceId = `${Platform.OS}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    await SecureStore.setItemAsync(DEVICE_KEY, deviceId);
+    await storage.setItemAsync(DEVICE_KEY, deviceId);
   }
 
   return {
@@ -96,14 +126,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
 
   const applySession = useCallback(async (nextToken: string, nextUser: AuthUser) => {
-    await SecureStore.setItemAsync(TOKEN_KEY, nextToken);
+    await storage.setItemAsync(TOKEN_KEY, nextToken);
     setToken(nextToken);
     setUser(nextUser);
     setStatus(nextUser.is_profile_complete ? 'ready' : 'needsProfile');
   }, []);
 
   const clearSession = useCallback(async () => {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await storage.deleteItemAsync(TOKEN_KEY);
     setToken(null);
     setUser(null);
     setStatus('signedOut');
@@ -115,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     (async () => {
-      const stored = await SecureStore.getItemAsync(TOKEN_KEY);
+      const stored = await storage.getItemAsync(TOKEN_KEY);
       if (!stored) {
         if (!cancelled) setStatus('signedOut');
         return;
@@ -132,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Only a rejected token means signed out — a dead network should leave
         // the stored token alone so the next launch can still use it.
         if (error instanceof ApiError && error.status === 401) {
-          await SecureStore.deleteItemAsync(TOKEN_KEY);
+          await storage.deleteItemAsync(TOKEN_KEY);
         }
         setStatus('signedOut');
       }

@@ -43,14 +43,15 @@ const capTop = (inkTop: number, fontSize: number) => inkTop - 0.35 * fontSize;
 const D = {
   back: { x: 20, y: 88, size: 24 },
   title: { x: 58, inkTop: 93.25, fontSize: 20 },
-  field: { x: 18, y: 196, width: 366, height: 52 },
-  // Offsets below are relative to the field box.
-  flag: { left: 27.75, top: 17, width: 28.5, height: 18 },
-  dial: { left: 76.5, inkTop: 20, fontSize: 16 },
-  divider: { left: 114, top: 17, height: 18 },
-  // Tap target over flag + dial code, ending at the divider.
-  countryButton: { left: 0, right: 114 },
-  phoneInput: { left: 125.5, right: 20, fontSize: 16 },
+  // The field's content is a flex row, not the Figma offsets a fixed "+91" was measured
+  // at — a longer dial code (e.g. "+359", "+998") doesn't fit the same fixed gap before
+  // the divider, so every width here is content-driven instead of an absolute position.
+  field: { x: 18, y: 196, width: 366, height: 52, paddingLeft: 27.75, paddingRight: 20 },
+  flag: { width: 28.5, height: 18 },
+  flagToDialGap: 16,
+  dial: { fontSize: 16, marginRight: 14 },
+  divider: { width: 1, height: 18, marginRight: 10 },
+  phoneInput: { fontSize: 16 },
   // Only in state 1. Icon and label are centred as a pair, so the label keeps
   // its 8px gap even though Poppins measures differently from the design font.
   getCode: { x: 18, y: 264, width: 366, height: 52, iconSize: 22, gap: 8, fontSize: 15 },
@@ -77,6 +78,10 @@ export default function PhoneAuthScreen() {
   const { sendOtp, verifyOtp } = useAuth();
 
   const [phone, setPhone] = useState('');
+  // The TextInput's own border/outline is stripped (see phoneInput style) so the focus
+  // ring can't look like a rectangle cut out of the pill — this drives the whole pill's
+  // border instead, same as EmailAuthScreen.
+  const [phoneFocused, setPhoneFocused] = useState(false);
   const [countryCode, setCountryCode] = useState('IN');
   const [countryModalVisible, setCountryModalVisible] = useState(false);
   const [codeRequested, setCodeRequested] = useState(false);
@@ -193,44 +198,33 @@ export default function PhoneAuthScreen() {
       <View
         style={[
           styles.field,
+          phoneFocused && styles.fieldFocused,
           {
             left: px(D.field.x),
             top: px(D.field.y),
             width: px(D.field.width),
             height: px(D.field.height),
             borderRadius: px(D.field.height / 2),
+            paddingLeft: px(D.field.paddingLeft),
+            paddingRight: px(D.field.paddingRight),
           },
         ]}
       >
         <Pressable
           onPress={() => setCountryModalVisible(true)}
-          style={{
-            position: 'absolute',
-            top: 0,
-            bottom: 0,
-            left: px(D.countryButton.left),
-            width: px(D.countryButton.right),
-          }}
+          style={[styles.countryButton, { gap: px(D.flagToDialGap) }]}
         >
           {country.code === 'IN' ? (
             <Image
               source={flagIndia}
               resizeMode="contain"
-              style={{
-                position: 'absolute',
-                left: px(D.flag.left),
-                top: px(D.flag.top),
-                width: px(D.flag.width),
-                height: px(D.flag.height),
-              }}
+              style={{ width: px(D.flag.width), height: px(D.flag.height) }}
             />
           ) : (
             <Text
               style={[
                 styles.flagEmoji,
                 {
-                  left: px(D.flag.left),
-                  top: px(D.flag.top),
                   width: px(D.flag.width),
                   height: px(D.flag.height),
                   fontSize: px(D.flag.height),
@@ -246,8 +240,7 @@ export default function PhoneAuthScreen() {
             style={[
               styles.dial,
               {
-                left: px(D.dial.left),
-                top: px(capTop(D.dial.inkTop, D.dial.fontSize)),
+                marginRight: px(D.dial.marginRight),
                 fontSize: px(D.dial.fontSize),
                 lineHeight: px(D.dial.fontSize * 1.4),
               },
@@ -260,28 +253,25 @@ export default function PhoneAuthScreen() {
         <View
           style={[
             styles.divider,
-            {
-              left: px(D.divider.left),
-              top: px(D.divider.top),
-              height: px(D.divider.height),
-            },
+            { height: px(D.divider.height), marginRight: px(D.divider.marginRight) },
           ]}
         />
 
         <TextInput
+          nativeID="phone-number-input"
           value={phone}
-          onChangeText={setPhone}
+          onChangeText={(text) => {
+            setPhone(text);
+            // A code already sent was for the old number — editing it even by one digit
+            // means Submit would be verifying the wrong identifier, so start over.
+            if (codeRequested) setCodeRequested(false);
+          }}
+          onFocus={() => setPhoneFocused(true)}
+          onBlur={() => setPhoneFocused(false)}
           placeholder="Phone Number"
           placeholderTextColor={colors.phonePlaceholder}
           keyboardType="phone-pad"
-          style={[
-            styles.phoneInput,
-            {
-              left: px(D.phoneInput.left),
-              right: px(D.phoneInput.right),
-              fontSize: px(D.phoneInput.fontSize),
-            },
-          ]}
+          style={[styles.phoneInput, { fontSize: px(D.phoneInput.fontSize) }]}
         />
       </View>
 
@@ -398,7 +388,10 @@ export default function PhoneAuthScreen() {
         selectedValue={countryCode}
         searchable
         searchPlaceholder="Search countries"
-        onSelect={setCountryCode}
+        onSelect={(value) => {
+          setCountryCode(value);
+          if (codeRequested) setCodeRequested(false);
+        }}
         onClose={() => setCountryModalVisible(false)}
       />
     </View>
@@ -418,33 +411,41 @@ const styles = StyleSheet.create({
   },
   field: {
     position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.phoneFieldBorder,
-    justifyContent: 'center',
+  },
+  fieldFocused: {
+    borderColor: colors.black,
+  },
+  countryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   dial: {
-    position: 'absolute',
     fontFamily: typography.fontFamily.medium,
     color: colors.black,
     includeFontPadding: false,
   },
   flagEmoji: {
-    position: 'absolute',
     textAlign: 'center',
     includeFontPadding: false,
   },
   divider: {
-    position: 'absolute',
     width: 1,
     backgroundColor: colors.textMuted,
   },
   phoneInput: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    paddingHorizontal: 0,
+    flex: 1,
+    height: '100%',
+    padding: 0,
     fontFamily: typography.fontFamily.regular,
     color: colors.black,
+    // See EmailAuthScreen's emailInput — same web focus-ring/border fix.
+    borderWidth: 0,
+    outlineWidth: 0,
+    ...({ appearance: 'none', boxShadow: 'none', borderStyle: 'none' } as object),
   },
   getCodeButton: {
     position: 'absolute',

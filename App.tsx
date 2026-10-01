@@ -8,6 +8,7 @@ import {
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -30,6 +31,28 @@ export default function App() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    // TextInput renders as a real <input> on web, which some browsers/OS themes give a
+    // focus border/outline that inline RN styles (borderWidth/outlineWidth: 0) don't
+    // fully suppress — !important here overrides that regardless of where it comes from.
+    // Scoped by id, not a blanket `input, textarea` selector — that also hit the OTP
+    // boxes (OtpInput.tsx), whose only visible edge *is* that border.
+    if (Platform.OS !== 'web') return;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      #email-address-input, #phone-number-input {
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
 
   if (!fontsLoaded && !fontError) {
     return null;

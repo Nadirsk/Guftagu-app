@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronRight, EarthLock, MailMinus } from 'lucide-react-native';
-import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ApiError } from '../api/client';
@@ -60,8 +60,14 @@ export default function WelcomeScreen() {
             disabled={busy !== null}
             style={[styles.authButton, styles.googleButton, busy !== null && styles.disabled]}
           >
-            <GoogleIcon size={24} />
-            <Text style={styles.googleButtonText}>Sign In With Google</Text>
+            {busy === 'google' ? (
+              <ActivityIndicator color={colors.black} />
+            ) : (
+              <>
+                <GoogleIcon size={24} />
+                <Text style={styles.googleButtonText}>Sign In With Google</Text>
+              </>
+            )}
           </Pressable>
 
           <Pressable
@@ -69,8 +75,14 @@ export default function WelcomeScreen() {
             disabled={busy !== null}
             style={[styles.authButton, styles.facebookButton, busy !== null && styles.disabled]}
           >
-            <FacebookIcon size={24} />
-            <Text style={styles.facebookButtonText}>Sign In With Facebook</Text>
+            {busy === 'facebook' ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <>
+                <FacebookIcon size={24} />
+                <Text style={styles.facebookButtonText}>Sign In With Facebook</Text>
+              </>
+            )}
           </Pressable>
         </View>
 

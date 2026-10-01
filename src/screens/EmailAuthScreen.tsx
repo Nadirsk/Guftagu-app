@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ArrowLeft, Mail } from 'lucide-react-native';
+import { ArrowLeft, Mail, MailMinus } from 'lucide-react-native';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -34,14 +34,20 @@ const capTop = (inkTop: number, fontSize: number) => inkTop - 0.35 * fontSize;
 const D = {
   back: { x: 20, y: 88, size: 24 },
   title: { x: 58, inkTop: 93.5, fontSize: 20 },
-  label: { x: 16, inkTop: 188, fontSize: 18 },
+  // Pill field (icon + "E-mail" label + input, all inline) replacing the plain bordered
+  // box and the separate "Email" heading above it — approximated from a screenshot, not
+  // a Figma export, so these numbers are judgment calls, not measurements.
   emailBox: {
     x: 16,
     y: 215,
     width: 370,
-    height: 54,
-    radius: 10,
+    height: 56,
     paddingLeft: 20,
+    paddingRight: 20,
+    iconSize: 17,
+    iconGap: 8,
+    labelGap: 16,
+    labelFontSize: 15,
     fontSize: 15,
   },
   // Only in state 1. Slightly wider than the email box above it — that is how
@@ -66,6 +72,10 @@ export default function EmailAuthScreen() {
   const { sendOtp, verifyOtp } = useAuth();
 
   const [email, setEmail] = useState('');
+  // The TextInput's own border/outline is stripped (see emailInput style) so the
+  // focus ring can't look like a rectangle cut out of the pill — this drives the
+  // whole pill's border instead.
+  const [emailFocused, setEmailFocused] = useState(false);
   const [codeRequested, setCodeRequested] = useState(false);
   const [code, setCode] = useState<string[]>(() => Array(D.otp.count).fill(''));
   // Remounting the boxes on resend clears them and refocuses the first one.
@@ -168,46 +178,47 @@ export default function EmailAuthScreen() {
         Continue with E-mail Address
       </Text>
 
-      <Text
-        style={[
-          styles.label,
-          {
-            left: px(D.label.x),
-            top: px(capTop(D.label.inkTop, D.label.fontSize)),
-            fontSize: px(D.label.fontSize),
-            lineHeight: px(D.label.fontSize * 1.4),
-          },
-        ]}
-      >
-        Email
-      </Text>
-
       <View
         style={[
           styles.emailBox,
+          emailFocused && styles.emailBoxFocused,
           {
             left: px(D.emailBox.x),
             top: px(D.emailBox.y),
             width: px(D.emailBox.width),
             height: px(D.emailBox.height),
-            borderRadius: px(D.emailBox.radius),
+            borderRadius: px(D.emailBox.height / 2),
+            paddingLeft: px(D.emailBox.paddingLeft),
+            paddingRight: px(D.emailBox.paddingRight),
+            gap: px(D.emailBox.iconGap),
           },
         ]}
       >
+        <MailMinus size={px(D.emailBox.iconSize)} color={colors.black} strokeWidth={2} />
+
+        <Text style={[styles.emailLabel, { fontSize: px(D.emailBox.labelFontSize) }]}>
+          E-mail
+        </Text>
+
         <TextInput
+          nativeID="email-address-input"
           value={email}
-          onChangeText={setEmail}
-          placeholder="abc@gmail.com"
+          onChangeText={(text) => {
+            setEmail(text);
+            // A code already sent was for the old address — editing it even by one
+            // character means Submit would be verifying the wrong identifier, so start over.
+            if (codeRequested) setCodeRequested(false);
+          }}
+          onFocus={() => setEmailFocused(true)}
+          onBlur={() => setEmailFocused(false)}
+          placeholder="E-mail Address"
           placeholderTextColor={colors.inputPlaceholder}
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
           style={[
             styles.emailInput,
-            {
-              paddingHorizontal: px(D.emailBox.paddingLeft),
-              fontSize: px(D.emailBox.fontSize),
-            },
+            { marginLeft: px(D.emailBox.labelGap), fontSize: px(D.emailBox.fontSize) },
           ]}
         />
       </View>
@@ -328,23 +339,35 @@ const styles = StyleSheet.create({
     color: colors.black,
     includeFontPadding: false,
   },
-  label: {
+  emailBox: {
     position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    overflow: 'hidden',
+  },
+  emailBoxFocused: {
+    borderColor: colors.black,
+  },
+  emailLabel: {
     fontFamily: typography.fontFamily.medium,
     color: colors.black,
     includeFontPadding: false,
   },
-  emailBox: {
-    position: 'absolute',
-    borderWidth: 1,
-    borderColor: colors.inputBorder,
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
   emailInput: {
+    flex: 1,
     height: '100%',
+    padding: 0,
     fontFamily: typography.fontFamily.regular,
     color: colors.black,
+    // Web renders TextInput as a real <input>, which the browser gives its own default
+    // border and focus outline — a rectangle round the input alone, breaking the pill.
+    // border/outlineWidth cover React Native's own typed style; the native OS widget
+    // chrome underneath needs the raw web CSS resets too (outside RN's style types).
+    borderWidth: 0,
+    outlineWidth: 0,
+    ...({ appearance: 'none', boxShadow: 'none', borderStyle: 'none' } as object),
   },
   getCodeButton: {
     position: 'absolute',
