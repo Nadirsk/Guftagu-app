@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  ScrollViewInstance,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDesignScale } from '../theme/layout';
@@ -60,7 +68,7 @@ function Wheel({
   fontSize,
   label,
 }: WheelProps) {
-  const ref = useRef<ScrollView>(null);
+  const ref = useRef<ScrollViewInstance>(null);
   const padding = ((visibleCount - 1) / 2) * itemHeight;
 
   // Days and months wrap, so their columns are the list repeated an odd number

@@ -18,6 +18,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.guftagu",
+      "permissions": ["RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT"],
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "resize"
     },
@@ -36,7 +37,16 @@
       ],
       "expo-secure-store",
       "expo-web-browser",
-      "expo-video"
+      "expo-video",
+      "expo-status-bar",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "microphonePermission": "Guftagu needs the microphone so you can speak when you take a seat in a voice room.",
+          "cameraPermission": "Guftagu needs the camera for video seats in a voice room."
+        }
+      ],
+      "expo-dev-client"
     ],
     "scheme": "guftagu"
   }

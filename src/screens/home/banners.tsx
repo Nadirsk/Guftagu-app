@@ -2,9 +2,9 @@ import { Image, ImageSourcePropType, StyleSheet, Text, View } from 'react-native
 
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
-import { FONT_SIZE, TABS } from './geometry';
+import { BANNERS, FONT_SIZE } from './geometry';
 
-// The Party tab's three "trio" banners — nodes 19:63, 19:346 and 19:343. Each is
+// The header's three "trio" ranking banners — Groups 8921, 8922 and 8923. Each is
 // a bitmap backdrop with three portraits under ornamental crown frames, and two of
 // them carry a ribbon that overhangs the top edge.
 
@@ -51,9 +51,9 @@ type BannerSpec = {
   };
 };
 
-/** Node 19:63 — the left banner, the only one without a ribbon. */
+/** Group 8921 — the left banner, the only one without a ribbon. */
 export const BANNER_LEFT: BannerSpec = {
-  at: TABS.Party.banners.left,
+  at: BANNERS.left,
   background: art.smallLeft,
   size: { width: 177.878, height: 80 },
   photos: {
@@ -73,9 +73,9 @@ export const BANNER_LEFT: BannerSpec = {
   },
 };
 
-/** Node 19:346 — same trio layout, plus the "Weekly Star" ribbon above it. */
+/** Group 8922 — same trio layout, plus the "Weekly Star" ribbon above it. */
 export const BANNER_RIGHT: BannerSpec = {
-  at: TABS.Party.banners.right,
+  at: BANNERS.right,
   background: art.smallRight,
   size: { width: 177.878, height: 80 },
   photos: {
@@ -103,12 +103,12 @@ export const BANNER_RIGHT: BannerSpec = {
 };
 
 /**
- * Node 19:343 — the full-width "CP Ranking" banner. Its artwork starts 19px below
- * the section origin so the ribbon can overhang, so `at.y` is offset and every
- * child coordinate below is relative to the artwork rather than to the section.
+ * Group 8923 — the full-width "CP Ranking" banner. Its artwork starts 19px below
+ * the group's origin so the ribbon can overhang; `at` is the artwork, and every
+ * child coordinate below is relative to it rather than to the group.
  */
 export const BANNER_WIDE: BannerSpec = {
-  at: { x: TABS.Party.banners.wide.x, y: TABS.Party.banners.wide.y + 19 },
+  at: BANNERS.wide,
   background: art.wide,
   size: { width: 372, height: 105 },
   photos: {

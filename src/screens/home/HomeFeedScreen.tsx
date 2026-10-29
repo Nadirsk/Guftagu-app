@@ -1,180 +1,197 @@
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SvgXml } from 'react-native-svg';
+import { setStatusBarStyle } from 'expo-status-bar';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
-import * as icons from '../../assets/home/icons';
+import { api } from '../../api/client';
+import { storage, useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
 import { useDesignScale } from '../../theme/layout';
-import { colors, typography } from '../../theme/tokens';
-import { BANNER_LEFT, BANNER_RIGHT, BANNER_WIDE, TrioBanner } from './banners';
+import { colors } from '../../theme/tokens';
 import { BOTTOM_NAV_HEIGHT } from './BottomNav';
-import { HEADER, TABS } from './geometry';
+import DailyRewards from './DailyRewards';
+import FamilyBody from './FamilyBody';
+import { FeedPlaceholder, PostCard, useFeed, useFollow } from './feed';
+import { LIVE_CARD, POST } from './geometry';
+import { HomeHeader, TabRow, type TabName } from './header';
 import HeroCard from './HeroCard';
-import { CountriesSection, LiveCard, LiveGrid, StoriesRow } from './sections';
 
 /**
- * The home feed. One screen, three filters — Figma draws them as three frames
- * (Following 32:740, Party 15:64, Live 49:819) but they share the header, the
- * country strip, the story strip and the live-card grid, so only the body under
- * the header changes when you switch tabs. `geometry.ts` holds every dimension.
+ * The dark home — section 483:3248. One screen, four tabs: they share the header
+ * and the tab row, and only the body under the tab row changes. `geometry.ts`
+ * holds every dimension and says which frame each tab comes from.
+ *
+ * The header is laid out on the frame's own coordinates from the very top, the
+ * status bar included, because Figma draws the space backdrop under it.
  */
-
-export const TAB_NAMES = ['Following', 'Party', 'Live'] as const;
-export type TabName = (typeof TAB_NAMES)[number];
-
-// Node 32:745/39/40/41 — the Following tab's own four covers.
-const FOLLOWING_CARDS: LiveCard[] = [
-  { cover: require('../../assets/home/following-1.png'), title: 'Riya’s Live', viewers: 14, emphasised: true },
-  { cover: require('../../assets/home/following-2.png'), title: 'Riya’s Live', viewers: 14, emphasised: true },
-  { cover: require('../../assets/home/following-3.png'), title: 'Riya’s Live', viewers: 14, emphasised: true },
-  { cover: require('../../assets/home/following-4.png'), title: 'Riya’s Live', viewers: 14, emphasised: true },
-];
-
-// Nodes 19:253/256/283/301 — reused verbatim by the Live tab's grid (49:911),
-// which points at byte-identical exports.
-const FEED_CARDS: LiveCard[] = [
-  { cover: require('../../assets/home/live-1.png'), title: 'Riya’s Live', viewers: 14, emphasised: true },
-  { cover: require('../../assets/home/live-2.png'), title: 'Riya’s Live', viewers: 14, emphasised: true },
-  { cover: require('../../assets/home/live-3.png'), title: 'Riya’s Live', viewers: 14, emphasised: false },
-  { cover: require('../../assets/home/live-4.png'), title: 'Riya’s Live', viewers: 14, emphasised: false },
-];
-
-function FollowingBody() {
-  const g = TABS.Following.grid;
-  return (
-    <LiveGrid
-      left={g.x}
-      top={g.y}
-      columnGap={g.columnGap}
-      rowGap={g.rowGap}
-      cards={FOLLOWING_CARDS}
-    />
-  );
-}
-
-function PartyBody() {
-  const { countries, stories, grid } = TABS.Party;
-  return (
-    <>
-      <TrioBanner spec={BANNER_LEFT} />
-      <TrioBanner spec={BANNER_RIGHT} />
-      <TrioBanner spec={BANNER_WIDE} />
-      <CountriesSection left={countries.x} top={countries.y} />
-      <StoriesRow left={stories.x} top={stories.y} />
-      <LiveGrid
-        left={grid.x}
-        top={grid.y}
-        columnGap={grid.columnGap}
-        rowGap={grid.rowGap}
-        cards={FEED_CARDS}
-      />
-    </>
-  );
-}
-
-function LiveBody() {
-  const { countries, stories, grid } = TABS.Live;
-  return (
-    <>
-      <HeroCard />
-      <CountriesSection left={countries.x} top={countries.y} />
-      <StoriesRow left={stories.x} top={stories.y} />
-      <LiveGrid
-        left={grid.x}
-        top={grid.y}
-        columnGap={grid.columnGap}
-        rowGap={grid.rowGap}
-        cards={FEED_CARDS}
-      />
-    </>
-  );
-}
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Tabs'>;
 
-export default function HomeFeedScreen({ initialTab = 'Party' }: { initialTab?: TabName } = {}) {
+const REWARDS_KEY = 'guftagu.dailyRewards.lastShown';
+
+/** Local calendar day, so "once a day" turns over at the user's midnight. */
+function today() {
+  const now = new Date();
+  return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+}
+
+export default function HomeFeedScreen() {
   const { px } = useDesignScale();
   const navigation = useNavigation<NavigationProp>();
-  const insets = useSafeAreaInsets();
-  const [tab, setTab] = useState<TabName>(initialTab);
+  const { user, token } = useAuth();
+  const [tab, setTab] = useState<TabName>('For You');
+  const [refreshing, setRefreshing] = useState(false);
+  const [showRewards, setShowRewards] = useState(false);
 
-  // Position tabs comfortably below the safe area / status bar
-  const topInset = Math.max(insets.top, 16);
-  const tabsY = topInset + 8;
-  const searchY = tabsY + (29 - 34) / 2;
-  const headerHeight = tabsY + 29 + 10;
-  // Shift content up so there is no huge void between status bar, header, and content
-  const shift = HEADER.tabs.y - tabsY + 14;
+  const forYou = useFeed('discover');
+  const following = useFeed('following');
+  const feed = tab === 'For You' ? forYou : tab === 'Following' ? following : null;
+
+  const refreshFeeds = useCallback(() => {
+    forYou.refresh();
+    following.refresh();
+  }, [forYou.refresh, following.refresh]);
+  const follow = useFollow(refreshFeeds);
+
+  // The Live card is a still from Figma; tapping it walks into the busiest room live now.
+  const openLiveRoom = useCallback(async () => {
+    try {
+      const [room] = await api<{ uuid: string }[]>('/rooms/live?limit=1', { token });
+      if (room) navigation.navigate('Room', { uuid: room.uuid });
+      else Alert.alert('Live', 'No room is live right now.');
+    } catch {
+      Alert.alert('Live', 'Could not load live rooms.');
+    }
+  }, [navigation, token]);
+
+  // The rest of the app is white with a dark status bar; this screen is not.
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle('light');
+      return () => setStatusBarStyle('dark');
+    }, []),
+  );
+
+  // On first show, on switching tabs, and on coming back from Post Details,
+  // where counts or follows may have changed.
+  const refreshVisible = feed?.refresh;
+  useFocusEffect(
+    useCallback(() => {
+      refreshVisible?.();
+    }, [refreshVisible]),
+  );
+
+  const rewardsKey = `${REWARDS_KEY}.${user?.uuid ?? 'guest'}`;
+  useEffect(() => {
+    let cancelled = false;
+    storage
+      .getItemAsync(rewardsKey)
+      .then((last) => {
+        if (!cancelled && last !== today()) setShowRewards(true);
+      })
+      .catch(() => {
+        if (!cancelled) setShowRewards(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rewardsKey]);
+
+  const collect = useCallback(() => {
+    setShowRewards(false);
+    storage.setItemAsync(rewardsKey, today()).catch(() => undefined);
+  }, [rewardsKey]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await feed?.refresh();
+    setRefreshing(false);
+  }, [feed]);
+
+  let body: React.ReactNode;
+  if (tab === 'Family') {
+    body = <FamilyBody top={POST.y} />;
+  } else if (tab === 'Live') {
+    body = (
+      <View style={{ height: px(LIVE_CARD.y - POST.y + LIVE_CARD.height) }}>
+        <HeroCard originY={POST.y} onPress={openLiveRoom} />
+      </View>
+    );
+  } else if (feed && feed.posts.length > 0) {
+    const isForYou = tab === 'For You';
+    body = (
+      <View style={{ marginLeft: px(POST.x), gap: px(POST.gap) }}>
+        {feed.posts.map((post) => {
+          const author = post.author;
+          return (
+            <PostCard
+              key={post.uuid}
+              post={post}
+              // Everyone in Following is followed already — that is the difference.
+              showFollow={isForYou}
+              following={author ? follow.followed[author.uuid] ?? false : false}
+              followBusy={author ? follow.busy[author.uuid] ?? false : false}
+              onToggleFollow={() => {
+                if (author) follow.toggle(author);
+              }}
+              onOpen={() => navigation.navigate('PostDetails', { post, following: !isForYou })}
+              onOpenMedia={(index) =>
+                navigation.navigate('MediaViewer', { urls: post.media_urls ?? [], index })
+              }
+            />
+          );
+        })}
+        {feed.loadingMore ? <ActivityIndicator color={colors.white} /> : null}
+      </View>
+    );
+  } else {
+    body = (
+      <FeedPlaceholder
+        loaded={feed?.loaded ?? false}
+        empty={
+          tab === 'For You'
+            ? 'No new moments to discover right now.'
+            : 'Moments from the people you follow will show up here.'
+        }
+      />
+    );
+  }
 
   return (
     <View style={styles.screen}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={{
-          // TabShell's bar floats over the feed, so the content ends above it.
-          height: px(TABS[tab].canvas - shift) + px(24) + px(BOTTOM_NAV_HEIGHT),
+        scrollEventThrottle={16}
+        onScroll={({ nativeEvent }) => {
+          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+          if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 120) {
+            feed?.loadMore();
+          }
         }}
+        refreshControl={
+          feed ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.white}
+              colors={[colors.homeAccent]}
+            />
+          ) : undefined
+        }
+        // TabShell's bar floats over the feed, so the content ends above it.
+        contentContainerStyle={{ paddingBottom: px(BOTTOM_NAV_HEIGHT + 24) }}
       >
-        <View style={{ position: 'relative', top: -px(shift), height: px(TABS[tab].canvas) }}>
-          {tab === 'Following' ? <FollowingBody /> : tab === 'Party' ? <PartyBody /> : <LiveBody />}
+        {/* The header block; its backdrop runs on underneath the tab body. */}
+        <View style={{ height: px(POST.y), zIndex: 0 }}>
+          <HomeHeader />
+          <TabRow tab={tab} onSelect={setTab} />
         </View>
+        {body}
       </ScrollView>
 
-      {/* Node 52:1269 — an opaque white band the feed scrolls under. */}
-      <View style={[styles.header, { height: px(headerHeight) }]} pointerEvents="box-none">
-        <Pressable
-          onPress={() => navigation.navigate('Search')}
-          style={[
-            styles.search,
-            {
-              left: px(HEADER.search.x),
-              top: px(searchY),
-              width: px(HEADER.search.width),
-              height: px(HEADER.search.height),
-              borderRadius: px(HEADER.search.radius),
-            },
-          ]}
-        >
-          <SvgXml
-            xml={icons.search}
-            width={px(HEADER.search.icon)}
-            height={px(HEADER.search.icon)}
-          />
-        </Pressable>
-
-        <View
-          style={[
-            styles.tabs,
-            { left: px(HEADER.tabs.x), top: px(tabsY), gap: px(HEADER.tabs.gap) },
-          ]}
-        >
-          {TAB_NAMES.map((name) => {
-            const active = name === tab;
-            return (
-              <Pressable key={name} onPress={() => setTab(name)}>
-                <Text
-                  style={[
-                    active ? styles.tabActive : styles.tabIdle,
-                    {
-                      fontSize: px(active ? HEADER.tab.activeSize : HEADER.tab.inactiveSize),
-                      lineHeight: px(
-                        active ? HEADER.tab.activeHeight : HEADER.tab.inactiveHeight,
-                      ),
-                    },
-                  ]}
-                >
-                  {name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
+      {showRewards ? <DailyRewards onCollect={collect} /> : null}
     </View>
   );
 }
@@ -182,35 +199,6 @@ export default function HomeFeedScreen({ initialTab = 'Party' }: { initialTab?: 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.white,
-  },
-  header: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    backgroundColor: colors.white,
-  },
-  search: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.searchBorder,
-  },
-  tabs: {
-    position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  tabActive: {
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.black,
-    textDecorationLine: 'underline',
-  },
-  tabIdle: {
-    fontFamily: typography.fontFamily.medium,
-    color: colors.black,
-    opacity: 0.5,
+    backgroundColor: colors.black,
   },
 });

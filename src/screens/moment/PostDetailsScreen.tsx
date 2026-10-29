@@ -14,6 +14,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TextInputInstance,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -155,8 +156,6 @@ function timeAgo(iso: string | null) {
   return `${Math.round(hrs / 24)}d ago`;
 }
 
-const commenterAvatar = require('../../assets/home/moment-commenter.png');
-
 function CommentRow({
   comment,
   top,
@@ -182,9 +181,9 @@ function CommentRow({
       }}
     >
       <Image
-        source={
-          comment.author?.avatar_url ? { uri: comment.author.avatar_url } : commenterAvatar
-        }
+        // The commenter's own photo; without one, the same placeholder every other
+        // author row falls back to, not Figma's sample face.
+        source={avatarSource(comment)}
         style={{
           position: 'absolute',
           width: px(c.avatar),
@@ -410,7 +409,7 @@ export default function PostDetailsScreen() {
   const [replyTo, setReplyTo] = useState<{ parentUuid: string; name: string } | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const isSubmittingRef = useRef(false);
 
   useEffect(() => {
@@ -779,7 +778,8 @@ export default function PostDetailsScreen() {
         />
 
         {/* The feed's own action row (node 73:736), brought onto this frame so
-            an opened post can be liked. Right-aligned to the screen margin. */}
+            an opened post can be liked. Right-aligned to the screen margin.
+            The feed's share icon is left off here. */}
         <View
           style={[
             styles.postActions,
@@ -791,11 +791,6 @@ export default function PostDetailsScreen() {
             },
           ]}
         >
-          <SvgXml
-            xml={icons.momentRedo}
-            width={px(D.actions.icon)}
-            height={px(D.actions.icon)}
-          />
           <View style={[styles.actionItem, { gap: px(D.actions.countGap) }]}>
             <SvgXml
               xml={icons.momentChatDots}

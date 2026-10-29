@@ -1,165 +1,204 @@
-// Design pixels for the home feed's three tabs, all drawn on the same 402x874
-// Figma frame in file 2efyYqMzjutSW7aq0vSf7L:
+// Design pixels for the dark home — section 483:3248 in file ODEXeeT7yuiT9r7AG4Q3Gh,
+// four tabs on 402-wide frames that share one header:
 //
-//   Following → node 32:740
-//   Party     → node 15:64
-//   Live      → node 49:819
+//   For You   → node 472:2311 (named "Following" in Figma, but For You is the
+//               selected tab and its cards carry a Follow link)
+//   Following → node 479:2606 (the same cards without Follow)
+//   Family    → node 479:2363
+//   Live      → node 463:2002
+//   Daily Rewards popup and the bottom bar → node 483:2812
 //
-// Section positions are absolute on the frame; child positions are relative to
-// their section, the way Figma nests them. Everything is scaled with `px()` from
-// `theme/layout`, so the result is proportional on any device width.
+// Positions are absolute on the frame unless a block says otherwise. Everything
+// is scaled with `px()` from `theme/layout`, so the result is proportional on any
+// device width.
 //
-// The three frames disagree by 1-4px on the shared sections' left margins and on
-// the card grid's gaps. Those look like drawing slips rather than three different
-// specs, but each tab is reproduced on its own frame's numbers, so `TABS` below
-// carries a per-tab x/gap for every shared section. The one value NOT taken
-// literally is Following's fourth card, which Figma leaves 1px left of and 4px
-// above its own row — there is no way to read that as intentional.
+// The frames disagree by a few pixels on the shared header (the bell sits at
+// 329,39 / 333,42 / 333,43 / 333,47) and on the tab row (618 vs 611). Those read
+// as drawing slips, so the header and tabs follow the plain "home page" frame
+// (479:2606) on every tab.
 
-/** The white header band (node 52:1269) that the feed scrolls under. */
+/** The shared header, drawn over `background`. */
 export const HEADER = {
-  height: 118,
-  tabs: { x: 16, y: 84, gap: 10 },
-  tab: {
-    activeSize: 24,
-    activeHeight: 29,
-    inactiveSize: 20,
-    inactiveHeight: 27,
-  },
-  search: { x: 333, y: 76, width: 53, height: 34, radius: 32, icon: 20 }, // node 15:453
-} as const;
-
-/** Countries section — node 19:340 (Party) / 50:1164 (Live). */
-export const COUNTRIES = {
-  headerWidth: 370, // node 19:339
-  headerHeight: 22,
-  rowHeight: 34,
-  gap: 14,
-  chipGap: 8,
-  all: { width: 80, height: 34, radius: 39 },
-} as const;
-
-/** Story strip — node 25:371 (Party) / 50:1192 (Live). */
-export const STORIES = {
-  gap: 18,
-  circle: { width: 55, height: 54 },
-  /** The "Create" cell is narrower than its ring, so the ring overhangs by 4px. */
-  createWidth: 47,
-  labelGap: 5,
-  plus: 24,
-} as const;
-
-/** Live-card grid — node 19:337 (Party) / 49:911 (Live) / four loose cards on Following. */
-export const GRID = {
-  card: { width: 180, height: 192 },
-  /** node 19:228 — flag + title over the overlapping viewer avatars. */
-  info: { x: 12, y: 125, width: 83, gap: 4 },
-  titleRow: { height: 23, flagTop: 5, titleX: 24, titleTop: 2 },
-  avatars: { size: 29, step: 12, count: 5 },
-  /** node 19:231 — translucent viewer-count tab; overhangs the card by ~1px. */
-  badge: { x: 130, y: 16, width: 51.133, height: 34 },
-  badgeWave: { x: 6, y: 9, size: 17 },
-  badgeCount: { x: 31, y: 7, width: 15, height: 21 },
-} as const;
-
-/** Where each tab's sections start, and how tall its content is. */
-export const TABS = {
-  Following: {
-    // Nodes 32:743 / 43:309 / 43:336 — x=16, columns 13 apart, rows 19 apart.
-    grid: { x: 16, y: 164, columnGap: 13, rowGap: 19 },
-    canvas: 567, // last card bottom (164 + 192 + 19 + 192)
-  },
-  Party: {
-    banners: {
-      left: { x: 16, y: 155 }, // node 19:63
-      right: { x: 208, y: 154 }, // node 19:346
-      wide: { x: 16, y: 247 }, // node 19:343 — artwork starts 19px in, see banners.tsx
-    },
-    countries: { x: 16, y: 408 }, // node 19:340
-    stories: { x: 20, y: 509 }, // node 25:371
-    grid: { x: 14, y: 624, columnGap: 12, rowGap: 16 }, // node 19:337
-    canvas: 1024,
-  },
-  Live: {
-    hero: { x: 16, y: 146, width: 370, height: 367, radius: 10 }, // node 50:1091
-    countries: { x: 13, y: 545 }, // node 50:1164
-    stories: { x: 17, y: 646 }, // node 50:1192
-    grid: { x: 14, y: 755, columnGap: 12, rowGap: 16 }, // node 49:911
-    canvas: 1155,
-  },
-} as const;
-
-/**
- * Bottom navigation — node 15:307. Figma leaves this group loose on the canvas
- * rather than inside any 402x874 frame, so its 348x52 content block is reproduced
- * exactly and the padding around it is chosen here.
- *
- * `icon`/`overlay` are the two stacked vectors each item is drawn from (the house
- * plus its doorway, the square plus its arc); `label` is the text box. All are
- * relative to the 348-wide content block.
- */
-export const BOTTOM_NAV = {
-  content: { x: 26, width: 348, height: 52 },
-  paddingTop: 8,
-  paddingBottom: 8,
-  label: { top: 34, height: 18, fontSize: 12 },
-  /**
-   * Each item is laid out around `center` — the x its icon and label share in
-   * Figma — rather than from Figma's own label boxes. Those boxes (36 / 50 / 30 /
-   * 18 wide) are measured in Delight, and Poppins is wider, so "Home" wrapped
-   * onto a second line inside a 36px box. Centring on a fixed cell keeps the
-   * positions Figma specifies and lets every label stay on one line.
-   */
-  cellWidth: 72,
-  items: [
-    {
-      key: 'Home',
-      center: 18,
-      icon: { x: 3, y: 0, width: 29.39, height: 29.39 },
-      overlay: { x: 11.766, y: 13.188, width: 11.343, height: 12.888 },
-    },
-    {
-      key: 'Moment',
-      center: 123,
-      // 28x28 slot in Figma, but the 30-unit viewBox overhangs it by 1 on each side.
-      icon: { x: 109, y: -1, width: 30, height: 30 },
-      overlay: { x: 119, y: 10, width: 10, height: 10 },
-    },
-    {
-      key: 'Chat',
-      center: 228,
-      icon: { x: 213, y: 0, width: 29, height: 29 },
-    },
-    {
-      key: 'Me',
-      center: 333,
-      icon: { x: 319, y: 0, width: 29, height: 29 },
-    },
+  /** image 205674 — 250x1024 bitmap stretched to 402x1357 over the black frame. */
+  background: { width: 402, height: 1357 },
+  title: { x: 16, y: 76, size: 21 }, // "Guftagu"
+  /** Frames 1597881452-4 — a 51px portrait with a 12px name 5px under it. */
+  avatar: { size: 51, labelTop: 56, labelSize: 12, labelHeight: 15 },
+  avatars: [
+    { x: 171, y: 40 }, // 479:2615
+    { x: 315, y: 121 }, // 479:2612
+    { x: 73, y: 177 }, // 479:2618 — mostly behind the matching pill
   ],
+  /** Group 1597881079 (483:3227). */
+  bell: {
+    /** Ellipse 1990 is 53px; its blur export overhangs by 29.43% on each side. */
+    glow: { x: 317.4, y: 27.4, size: 84.2 },
+    box: { x: 339, y: 50 },
+    /** image 205676 — a 34x39 window onto the bell bitmap, cropped by Figma. */
+    image: { width: 34, height: 39, x: -11.333, y: -7.548, scaledWidth: 56.667, scaledHeight: 56.613 },
+    badge: { x: 24, y: 0, size: 18, fontSize: 12 },
+  },
+  /**
+   * Frame 1597881448 — the "Matching with you" pill, hanging 32px off the left
+   * edge. Child positions are relative to the pill.
+   */
+  match: {
+    x: -32,
+    y: 201,
+    width: 210,
+    height: 56,
+    radius: 28,
+    avatar: { x: 42, y: 7, size: 39 },
+    count: { x: 106, y: 7, size: 16, height: 20 },
+    /**
+     * Figma sets this in Delight; Poppins at the same size runs 15px longer and
+     * into the chevron, so it is tracked in just enough to clear it.
+     */
+    caption: { x: 88, y: 29, size: 11, height: 14, tracking: -0.5 },
+    /** Four 3px bars, bottom-aligned, 1px apart. */
+    bars: { x: 87, y: 11, width: 3, gap: 1, heights: [13, 9, 12, 5] },
+    chevron: { x: 182, y: 24, size: 19, glyph: { x: 6.333, y: 4.75, width: 5.858, height: 9.5 } },
+  },
+  activeNow: { y: 303, gap: 7, size: 16, height: 20 }, // Frame 1597881450, centred
 } as const;
 
-/** Hero card internals, relative to node 50:1091's 370x367 box. */
-export const HERO = {
-  /** node 50:1238 — the scrim that darkens the lower half. */
-  scrim: { x: -5, y: 77, width: 381, height: 301 },
-  scrimStops: [0.14768, 0.51152] as const,
-  dots: { x: 158, y: 336, width: 53, height: 11 }, // node 52:1244
-  streamer: { x: 18, y: 270, gap: 10, avatar: 49, innerGap: 7, fontSize: 16 }, // node 52:1257
-  badge: { x: 300, y: 32, width: 71.132, height: 38.089 }, // node 52:1259
-  badgeWave: { x: 8.5, y: 7.49, width: 27, height: 23 }, // node 52:1262
-  badgeCount: { x: 41, y: 7, width: 20.574, height: 22.853, fontSize: 15 }, // node 52:1261
+/** Ranking banners — the artwork's top-left on the frame (see banners.tsx). */
+export const BANNERS = {
+  left: { x: 16, y: 357 }, // Group 8921
+  right: { x: 208, y: 357 }, // Group 8922 — its ribbon starts 18px higher, at 339
+  wide: { x: 14, y: 465 }, // Group 8923 — its ribbon starts 19px higher, at 446
 } as const;
 
 export const FONT_SIZE = {
-  sectionTitle: 21, // "Countries"
-  sectionAction: 14, // "More"
-  chip: 12, // country chip labels
-  filter: 14, // "All"
-  storyLabel: 14,
   ribbon: 10, // "Weekly Star" / "CP Ranking"
-  cardTitle: 12, // "Riya's Live"
-  viewers: 14, // the small cards' "14"
 } as const;
 
-/** Horizontal page margin shared by every section. */
-export const SCREEN_PADDING = 16;
+/** Frame 1597881478 — For You / Following / Family / Live. */
+export const TABS = {
+  x: 17,
+  y: 618,
+  gap: 22,
+  active: { size: 20, height: 25 },
+  idle: { size: 18, height: 23, opacity: 0.8 },
+  /** Rectangle 161124120 — under the selected label's left edge. */
+  underline: { y: 27, width: 45, height: 3, radius: 11 },
+} as const;
+
+/** Frame 1597881455 — one feed card. Children are relative to the card. */
+export const POST = {
+  x: 17,
+  y: 672,
+  width: 369,
+  gap: 20, // 672 + 378 → 1070
+  radius: 10,
+  paddingTop: 25,
+  paddingBottom: 19,
+  author: { x: 19, avatar: 54, gap: 11, nameSize: 18, nameHeight: 23 },
+  /** Ellipse 1991 + "Follow" — straight after the name. */
+  follow: { gap: 6, dot: 4, dotGap: 4, size: 16, height: 20 },
+  /** Frame 1597881457 — right-aligned, 16px in from the card edge. */
+  chat: { right: 16, top: 41.5, icon: 21, gap: 7, size: 15, height: 19 },
+  /** One attachment is Figma's frame; several are a 3-across grid of squares. */
+  media: { x: 25, gap: 22, width: 247, height: 213, radius: 13, columns: 3, gridGap: 8, tileRadius: 8 },
+  body: { x: 25, gap: 22, size: 15, height: 21 },
+  footer: { x: 25, gap: 21, width: 316, height: 24, dateSize: 15, dateHeight: 19 },
+  actions: { gap: 17, icon: 24, countGap: 5, countSize: 13, countHeight: 16 },
+} as const;
+
+/** The Live tab's single card (Frame 1597881186). */
+export const LIVE_CARD = { x: 16, y: 674, width: 370, height: 367, radius: 10 } as const;
+
+/** Hero card internals, relative to the Live card's 370x367 box. */
+export const HERO = {
+  /** node 483:2740 — the scrim that darkens the lower half. */
+  scrim: { x: -5, y: 77, width: 381, height: 301 },
+  scrimStops: [0.14768, 0.51152] as const,
+  dots: { x: 158, y: 336, width: 53, height: 11 }, // node 483:2741
+  streamer: { x: 18, y: 270, gap: 10, avatar: 49, innerGap: 7, fontSize: 16 }, // node 483:2746
+  badge: { x: 300, y: 32, width: 70.132, height: 37 }, // node 483:2752
+  badgeWave: { x: 8.5, y: 7.49, width: 27, height: 23 }, // node 483:2755
+  badgeCount: { x: 41, y: 7, width: 20.574, height: 22.853, fontSize: 15 }, // node 483:2754
+} as const;
+
+/** Family tab (479:2363) — the empty state and one suggested family. */
+export const FAMILY = {
+  empty: { y: 812, size: 15, height: 19 },
+  suggestTitle: { y: 921, size: 17, height: 21 },
+  row: {
+    x: 16,
+    y: 997,
+    width: 370,
+    cover: { width: 86, height: 84, radius: 9 },
+    info: { width: 273, height: 62 },
+    name: { width: 92, size: 16, height: 20, gap: 12 },
+    /** green-heart-icon 1 — aspect 73:16 at 92 wide, the bitmap inset inside it. */
+    badges: { width: 92, height: 20.164, imageX: 0.598, imageWidth: 86.692 },
+    members: { width: 73, icon: 21, gap: 5, size: 15, height: 18, opacity: 0.5, stackGap: 6 },
+    join: { width: 73, height: 35, radius: 23, size: 15 },
+  },
+  canvas: 1081,
+} as const;
+
+/**
+ * Daily Rewards (Group 1597881078) — centred on the screen 21px above middle,
+ * the card 67px under the top of the ribbon that crowns it.
+ */
+export const REWARDS = {
+  width: 353,
+  height: 488,
+  centerOffset: -21,
+  /** download (1) 2 — a 256.7x109 window onto the ribbon bitmap. */
+  ribbon: {
+    x: 53.131,
+    y: 0,
+    width: 256.739,
+    height: 109,
+    image: { x: -11.4, y: -80.9, width: 279.537, height: 279.537 },
+  },
+  /** "Daily Rewards" — 9.5px right of the group's centre line, as drawn. */
+  title: { y: 40, size: 14, height: 21, centerOffset: 9.5 },
+  /**
+   * Frame 1597881083 — 353x421 with a 5px stroke that fades from white at the top
+   * to #FF8B25 at the bottom. Children below are relative to the inside of that
+   * stroke (343x411), the way the stroke clips them.
+   */
+  card: { y: 67, width: 353, height: 421, radius: 19, stroke: 5 },
+  /** Frame 1597881098 — the yellow wash; the subtitle is centred inside it. */
+  wash: { x: 0, y: -12, width: 342, height: 105 },
+  subtitle: { y: 69, size: 14, height: 21 },
+  grid: { y: 101, rowGap: 15, columnGap: 11, width: 307 },
+  /** One reward. Children are relative to the inside of its 1px border. */
+  tile: {
+    width: 95,
+    height: 91,
+    radius: 6,
+    border: 1,
+    coins: { x: 22, y: 19, width: 50, height: 35, imageX: 0.98, imageWidth: 47.04 },
+    band: { x: -1, y: 63, width: 95, height: 28 },
+    label: { y: 68, size: 11, height: 17, coin: 13, gap: 2 },
+  },
+  collect: { y: 330, width: 313, height: 53, radius: 37, size: 16, lineHeight: 24 },
+} as const;
+
+/**
+ * The bottom bar — Frame 1597881477 (687:6679). 406 wide and hung 2px past each
+ * side, so its 1px border only shows along the top. Figma lets it run 26px past
+ * the bottom of the frame; on a device that space is the home-indicator inset.
+ */
+export const BOTTOM_NAV = {
+  x: -2,
+  width: 406,
+  radius: 15,
+  /** Where the items start under the top border. */
+  itemsTop: 23,
+  item: { width: 39, height: 44, icon: 24, labelTop: 26, labelSize: 14, labelHeight: 18 },
+  /** Visible height on the 874px frame (874 - 782). */
+  height: 92,
+  idleOpacity: 0.5,
+  items: [
+    { key: 'Home', x: 37 },
+    { key: 'Party', x: 129 },
+    { key: 'Chats', x: 236 },
+    { key: 'Mine', x: 332 },
+  ],
+} as const;

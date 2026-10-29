@@ -11,6 +11,8 @@ import PostDetailsScreen from '../screens/moment/PostDetailsScreen';
 import PostMomentScreen from '../screens/moment/PostMomentScreen';
 import PhoneAuthScreen from '../screens/PhoneAuthScreen';
 import ProfileSetupScreen from '../screens/ProfileSetupScreen';
+import CreateRoomScreen from '../screens/room/CreateRoomScreen';
+import RoomScreen from '../screens/room/RoomScreen';
 import SearchScreen from '../screens/SearchScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import { colors } from '../theme/tokens';
@@ -69,6 +71,8 @@ export default function RootNavigator() {
             <Stack.Screen name="PostMoment" component={PostMomentScreen} />
             <Stack.Screen name="PostDetails" component={PostDetailsScreen} />
             <Stack.Screen name="MomentNotifications" component={MomentNotificationsScreen} />
+            <Stack.Screen name="Room" component={RoomScreen} />
+            <Stack.Screen name="CreateRoom" component={CreateRoomScreen} />
             <Stack.Screen
               name="MediaViewer"
               component={MediaViewerScreen}

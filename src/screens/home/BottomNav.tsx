@@ -8,29 +8,30 @@ import { colors, typography } from '../../theme/tokens';
 import { BOTTOM_NAV } from './geometry';
 
 /**
- * The app's bottom navigation — node 15:307.
+ * The app's bottom bar — node 687:6679. Mounted once by `TabShell`; screens only
+ * keep `BOTTOM_NAV_HEIGHT` of their scroll content clear beneath it.
  *
- * It lives on the home feed for now because Moment, Chat and Me have no screens
- * yet; once they exist this should become the tab bar of a navigator rather than
- * a child of one screen, and `active` should come from the navigation state.
- *
- * Figma draws the bar for a dark surface — white unselected items, a pink
- * selected one, no fill of its own. The home feed is white, so the bar follows
- * the screen's palette instead: see `colors.navActive` / `colors.navIdle`.
+ * Every item is white; the selected one is solid and the rest sit at 50%, which
+ * is the whole of Figma's selected state.
  */
 
-const GLYPHS: Record<string, { icon: string; overlay?: string }> = {
-  Home: { icon: icons.navHome, overlay: icons.navHomeDoor },
-  Moment: { icon: icons.navMoment, overlay: icons.navMomentDot },
-  Chat: { icon: icons.navChat },
-  Me: { icon: icons.navMe },
+const GLYPHS: Record<NavKey, string> = {
+  Home: icons.tabHome,
+  Party: icons.tabParty,
+  Chats: icons.tabChats,
+  Mine: icons.tabMine,
 };
 
 export type NavKey = (typeof BOTTOM_NAV.items)[number]['key'];
 
-/** Height the feed has to keep clear beneath itself, in design pixels. */
-export const BOTTOM_NAV_HEIGHT =
-  BOTTOM_NAV.paddingTop + BOTTOM_NAV.content.height + BOTTOM_NAV.paddingBottom;
+/**
+ * Each item is laid out in a cell this wide, centred where Figma's 39px item is:
+ * Figma sizes the items for Delight, and Poppins is wider, so "Chats" would clip.
+ */
+const LABEL_WIDTH = 80;
+
+/** Height the screens have to keep clear beneath themselves, in design pixels. */
+export const BOTTOM_NAV_HEIGHT = BOTTOM_NAV.height;
 
 export default function BottomNav({
   active,
@@ -41,89 +42,57 @@ export default function BottomNav({
 }) {
   const { px } = useDesignScale();
   const insets = useSafeAreaInsets();
-  const { content, label, cellWidth } = BOTTOM_NAV;
+  const { item } = BOTTOM_NAV;
+
+  // Figma's 92px already includes the space under the labels that the home
+  // indicator uses, so a device inset only adds height when it is larger.
+  const below = BOTTOM_NAV.height - BOTTOM_NAV.itemsTop - item.height;
 
   return (
     <View
       style={[
         styles.bar,
         {
-          height: px(BOTTOM_NAV_HEIGHT) + insets.bottom,
-          paddingTop: px(BOTTOM_NAV.paddingTop),
+          left: px(BOTTOM_NAV.x),
+          width: px(BOTTOM_NAV.width),
+          height: px(BOTTOM_NAV.itemsTop + item.height) + Math.max(px(below), insets.bottom),
+          borderTopLeftRadius: px(BOTTOM_NAV.radius),
+          borderTopRightRadius: px(BOTTOM_NAV.radius),
         },
       ]}
     >
-      <View
-        style={{
-          marginLeft: px(content.x),
-          width: px(content.width),
-          height: px(content.height),
-        }}
-      >
-        {BOTTOM_NAV.items.map((item) => {
-          const selected = item.key === active;
-          const tint = selected ? colors.navActive : colors.navIdle;
-          const glyph = GLYPHS[item.key];
-          // The cell is centred on the item's axis, so the icon's Figma x has to
-          // be re-expressed relative to the cell's left edge.
-          const cellLeft = item.center - cellWidth / 2;
-          const overlay = 'overlay' in item ? item.overlay : undefined;
-
-          return (
-            <Pressable
-              key={item.key}
-              onPress={onSelect ? () => onSelect(item.key) : undefined}
-              style={{
-                position: 'absolute',
-                left: px(cellLeft),
-                top: 0,
-                width: px(cellWidth),
-                height: px(content.height),
-              }}
-            >
-              <SvgXml
-                xml={glyph.icon}
-                color={tint}
-                width={px(item.icon.width)}
-                height={px(item.icon.height)}
-                style={{
-                  position: 'absolute',
-                  left: px(item.icon.x - cellLeft),
-                  top: px(item.icon.y),
-                }}
-              />
-              {glyph.overlay && overlay ? (
-                <SvgXml
-                  xml={glyph.overlay}
-                  color={tint}
-                  width={px(overlay.width)}
-                  height={px(overlay.height)}
-                  style={{
-                    position: 'absolute',
-                    left: px(overlay.x - cellLeft),
-                    top: px(overlay.y),
-                  }}
-                />
-              ) : null}
-
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.label,
-                  {
-                    top: px(label.top),
-                    fontSize: px(label.fontSize),
-                    lineHeight: px(label.height),
-                    color: tint,
-                  },
-                ]}
-              >
-                {item.key}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      {BOTTOM_NAV.items.map(({ key, x }) => (
+        <Pressable
+          key={key}
+          onPress={onSelect ? () => onSelect(key) : undefined}
+          style={{
+            position: 'absolute',
+            // The bar's 1px border moves its content box; Figma's x is from the outer
+            // edge. The cell is widened round the item's centre — see LABEL_WIDTH.
+            left: px(x - (LABEL_WIDTH - item.width) / 2) - 1,
+            top: px(BOTTOM_NAV.itemsTop) - 1,
+            width: px(LABEL_WIDTH),
+            height: px(item.height),
+            alignItems: 'center',
+            opacity: key === active ? 1 : BOTTOM_NAV.idleOpacity,
+          }}
+        >
+          <SvgXml xml={GLYPHS[key]} width={px(item.icon)} height={px(item.icon)} />
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.label,
+              {
+                marginTop: px(item.labelTop - item.icon),
+                fontSize: px(item.labelSize),
+                lineHeight: px(item.labelHeight),
+              },
+            ]}
+          >
+            {key}
+          </Text>
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -131,18 +100,16 @@ export default function BottomNav({
 const styles = StyleSheet.create({
   bar: {
     position: 'absolute',
-    left: 0,
-    right: 0,
     bottom: 0,
-    backgroundColor: colors.white,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.searchBorder,
+    backgroundColor: colors.black,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: colors.navBorder,
+    overflow: 'hidden',
   },
   label: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    fontFamily: typography.fontFamily.regular,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.white,
     textAlign: 'center',
   },
 });

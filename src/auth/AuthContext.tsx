@@ -20,7 +20,7 @@ const DEVICE_KEY = 'guftagu.device.id';
  * expo-secure-store has no web implementation (Android/iOS only) — calling it on
  * web throws instead of no-op'ing, so web falls back to localStorage here.
  */
-const storage = {
+export const storage = {
   async getItemAsync(key: string): Promise<string | null> {
     if (Platform.OS === 'web') return window.localStorage.getItem(key);
     return SecureStore.getItemAsync(key);

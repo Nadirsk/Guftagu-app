@@ -1,14 +1,12 @@
-// Verbatim SVG exports from the Guftagu Figma file (2efyYqMzjutSW7aq0vSf7L) — the
-// Party (15:64), Following (32:740) and Live (49:819) home-feed frames, the bottom
-// navigation bar (15:307) and the Search screen (25:372 / 25:390).
+// Verbatim SVG exports from the Guftagu Figma files — the Search screen (25:372 /
+// 25:390) and the Moment screens from 2efyYqMzjutSW7aq0vSf7L, and the dark home
+// with its bottom bar (section 483:3248) from ODEXeeT7yuiT9r7AG4Q3Gh.
 //
 // The project has no metro SVG transformer, so the markup is inlined here and
 // rendered with react-native-svg <SvgXml>. Do not hand-edit the paths — re-export
 // from Figma and regenerate this file from the .svg files sitting next to it.
 //
-// Two documented departures from "verbatim", both applied by the regeneration step:
-//   * the nav* icons have their hard-coded white / #C32FAE fills rewritten to
-//     currentColor, so one export serves the active and inactive state;
+// Documented departures from "verbatim", applied by the regeneration step:
 //   * the follow* hexagons have their <filter> blocks stripped — see follow-*.svg;
 //   * momentThumbsUp's #8E8E93 stroke is currentColor, so the same export can
 //     show a liked and an unliked post.
@@ -23,27 +21,6 @@ export const search = `<svg preserveAspectRatio="none" overflow="visible" style=
 export const searchLarge = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="25" height="25" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
 <g id="search">
 <path id="Vector" d="M21.8749 21.8749L17.3541 17.3541M19.7917 11.4583C19.7917 16.0607 16.0607 19.7917 11.4583 19.7917C6.85596 19.7917 3.125 16.0607 3.125 11.4583C3.125 6.85596 6.85596 3.125 11.4583 3.125C16.0607 3.125 19.7917 6.85596 19.7917 11.4583Z" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</g>
-</svg>
-`;
-
-export const createRing = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="55" height="54" viewBox="0 0 55 54" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g id="Ellipse 83">
-<ellipse cx="27.5" cy="27" rx="27.5" ry="27" fill="white"/>
-<path d="M27.5 0.5C42.4204 0.5 54.5 12.3731 54.5 27C54.5 41.6269 42.4204 53.5 27.5 53.5C12.5796 53.5 0.5 41.6269 0.5 27C0.5 12.3731 12.5796 0.5 27.5 0.5Z" stroke="black" stroke-opacity="0.31"/>
-</g>
-</svg>
-`;
-
-export const viewerBadge = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="51.1328" height="34" viewBox="0 0 51.1328 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path id="Union" d="M51.1328 34H18.8379V33.7627C17.9628 33.9173 17.0643 34 16.1475 34C7.22969 34 0 26.3888 0 17C0 7.61116 7.22969 0 16.1475 0C17.0642 2.35399e-05 17.9629 0.0817783 18.8379 0.236328V0H51.1328V34Z" fill="white" fill-opacity="0.32"/>
-</svg>
-`;
-
-export const wave = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="17" height="17" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g id="Vector">
-<path d="M1 6.83333V10.1667ZM4.75 7.66667V9.33333ZM8.5 3.5V13.5ZM12.25 1V16ZM16 6.83333V10.1667Z" fill="black"/>
-<path d="M1 6.83333V10.1667M4.75 7.66667V9.33333M8.5 3.5V13.5M12.25 1V16M16 6.83333V10.1667" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 </g>
 </svg>
 `;
@@ -109,82 +86,6 @@ export const flagIN = `<svg preserveAspectRatio="none" overflow="visible" style=
 <rect width="19" height="12" fill="white"/>
 </clipPath>
 </defs>
-</svg>
-`;
-
-export const flagPK = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="19" height="13" viewBox="0 0 19 13" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g id="flag/PK" clip-path="url(#clip0_0_177)">
-<g id="Group">
-<path id="Vector" d="M14.6028 3.24428L15.2527 3.96315L16.1197 3.55102L15.6543 4.40746L16.3042 5.12637L15.3667 4.93678L14.9014 5.79326L14.7873 4.81963L13.8498 4.63004L14.7168 4.21795L14.6028 3.24428Z" fill="white"/>
-<path id="Vector_2" d="M0 0.000444232H19V13.0002H0V0.000444232Z" fill="white"/>
-</g>
-<path id="Vector_3" d="M4.75 -7.61198e-05H19V13.0001H4.75V-7.61198e-05Z" fill="#01411C"/>
-<g id="Group_2">
-<path id="Vector_4" d="M13.4309 8.12968C12.2791 8.9838 10.6708 8.71796 9.83856 7.53585C9.00631 6.35373 9.26537 4.70305 10.4172 3.84897C10.7763 3.58268 11.1798 3.42527 11.5903 3.3705C10.8006 3.24927 9.96581 3.43193 9.26738 3.94982C7.8498 5.00107 7.53096 7.03266 8.55521 8.48758C9.57947 9.94242 11.559 10.2697 12.9766 9.21841C13.675 8.70052 14.1061 7.94451 14.2419 7.13682C14.0623 7.51958 13.79 7.86335 13.4309 8.12968V8.12968ZM13.3816 3.33451L14.0304 4.05212L14.8959 3.64072L14.4313 4.49563L15.0801 5.21333L14.1442 5.02412L13.6796 5.87914L13.5658 4.90715L12.6299 4.7179L13.4954 4.3065L13.3816 3.33451Z" fill="white"/>
-</g>
-</g>
-<defs>
-<clipPath id="clip0_0_177">
-<rect width="19" height="13" fill="white"/>
-</clipPath>
-</defs>
-</svg>
-`;
-
-export const flagBD = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="19" height="13" viewBox="0 0 19 13" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g id="flag/BD" clip-path="url(#clip0_0_167)">
-<path id="Vector" d="M-0.367188 -0.00019524H18.6328V12.9998H-0.367188V-0.00019524Z" fill="#2D6E41"/>
-<path id="Vector_2" d="M8.89206 10.8777C11.2444 10.8777 13.1513 8.92058 13.1513 6.50635C13.1513 4.09212 11.2444 2.135 8.89206 2.135C6.53973 2.135 4.6328 4.09212 4.6328 6.50635C4.6328 8.92058 6.53973 10.8777 8.89206 10.8777Z" fill="#F40B32"/>
-</g>
-<defs>
-<clipPath id="clip0_0_167">
-<rect width="19" height="13" fill="white"/>
-</clipPath>
-</defs>
-</svg>
-`;
-
-export const navHome = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="29.3897" height="29.3897" viewBox="0 0 29.3897 29.3897" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path id="Rectangle 2 (Stroke)" fill-rule="evenodd" clip-rule="evenodd" d="M15.7951 2.7847C15.1465 2.31404 14.2432 2.31404 13.5945 2.7847L3.28237 10.2669C2.83828 10.5891 2.57804 11.0876 2.57804 11.6161V25.2558C2.57804 26.1959 3.386 26.958 4.38267 26.958H25.007C26.0037 26.958 26.8116 26.1959 26.8116 25.2558V11.6161C26.8116 11.0876 26.5514 10.5891 26.1073 10.2669L15.7951 2.7847ZM12.0227 0.857271C13.598 -0.285757 15.7916 -0.285757 17.367 0.857271L27.6792 8.33943C28.7577 9.12196 29.3897 10.3326 29.3897 11.6161V25.2558C29.3897 27.5389 27.4275 29.3897 25.007 29.3897H4.38267C1.96219 29.3897 0 27.5389 0 25.2558V11.6161C0 10.3326 0.631998 9.12196 1.71051 8.33943L12.0227 0.857271Z" fill="currentColor"/>
-</svg>
-`;
-
-export const navHomeDoor = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="11.3434" height="12.888" viewBox="0 0 11.3434 12.888" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path id="Rectangle 3 (Stroke)" fill-rule="evenodd" clip-rule="evenodd" d="M0 3.16121C0 1.41532 1.5005 0 3.35145 0H7.99192C9.84288 0 11.3434 1.41532 11.3434 3.16121V12.888H8.76534V3.16121C8.76534 2.75832 8.41907 2.4317 7.99192 2.4317H3.35145C2.92431 2.4317 2.57804 2.75832 2.57804 3.16121V12.888H0V3.16121Z" fill="currentColor"/>
-</svg>
-`;
-
-export const navMoment = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path id="Vector" d="M25.8889 1H4.11111C2.39289 1 1 3.08934 1 5.66667V24.3333C1 26.9107 2.39289 29 4.11111 29H25.8889C27.6071 29 29 26.9107 29 24.3333V5.66667C29 3.08934 27.6071 1 25.8889 1Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
-`;
-
-export const navMomentDot = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g id="loader-circle" clip-path="url(#clip0_0_22)">
-<path id="Vector" d="M8.75 5C8.74996 5.79191 8.49922 6.56348 8.03372 7.20413C7.56822 7.84479 6.91186 8.32163 6.1587 8.56632C5.40554 8.81101 4.59425 8.81098 3.8411 8.56625C3.08795 8.32152 2.43162 7.84464 1.96615 7.20396C1.50069 6.56329 1.24999 5.7917 1.25 4.99979C1.25001 4.20788 1.50071 3.4363 1.96618 2.79562C2.43166 2.15495 3.088 1.67809 3.84115 1.43337C4.5943 1.18864 5.40559 1.18863 6.15875 1.43333" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</g>
-<defs>
-<clipPath id="clip0_0_22">
-<rect width="10" height="10" fill="currentColor"/>
-</clipPath>
-</defs>
-</svg>
-`;
-
-export const navChat = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="29" height="29" viewBox="0 0 29 29" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g id="Group 12">
-<path id="Rectangle 15 (Stroke)" fill-rule="evenodd" clip-rule="evenodd" d="M28.8359 14.5C28.8359 6.49187 22.3808 0 14.4179 0C6.45513 0 1.55346e-06 6.49187 1.55346e-06 14.5C1.55346e-06 22.5081 6.45513 29 14.4179 29C17.2655 29 19.9231 28.1686 22.1601 26.7341L26.7588 28.3528C28.0994 28.8247 29.3821 27.5164 28.8941 26.1749L27.1347 21.3384C28.2204 19.3002 28.8359 16.9708 28.8359 14.5ZM14.4179 2.41667C21.0536 2.41667 26.4329 7.82656 26.4329 14.5C26.4329 16.7352 25.8306 18.8252 24.781 20.6188C24.5987 20.9303 24.5647 21.3074 24.6881 21.6468L26.1136 25.5653L22.3881 24.254C22.023 24.1255 21.6188 24.1816 21.3019 24.4048C19.3527 25.7778 16.9806 26.5833 14.4179 26.5833C7.78227 26.5833 2.40299 21.1734 2.40299 14.5C2.40299 7.82656 7.78227 2.41667 14.4179 2.41667Z" fill="currentColor"/>
-</g>
-</svg>
-`;
-
-export const navMe = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="29" height="29" viewBox="0 0 29 29" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g id="Group 11">
-<path id="Rectangle 16 (Stroke)" fill-rule="evenodd" clip-rule="evenodd" d="M0 14.5C0 6.49187 6.49187 0 14.5 0C22.5081 0 29 6.49187 29 14.5C29 22.5081 22.5081 29 14.5 29C6.49187 29 0 22.5081 0 14.5ZM14.5 2.41667C7.82656 2.41667 2.41667 7.82656 2.41667 14.5C2.41667 21.1734 7.82656 26.5833 14.5 26.5833C21.1734 26.5833 26.5833 21.1734 26.5833 14.5C26.5833 7.82656 21.1734 2.41667 14.5 2.41667Z" fill="currentColor"/>
-<path id="Rectangle 17 (Stroke)" fill-rule="evenodd" clip-rule="evenodd" d="M8.51694 18.7049C8.95721 18.2034 9.72068 18.1538 10.2222 18.594C12.7024 20.7714 16.7809 20.7714 19.2612 18.594C19.7627 18.1538 20.5261 18.2034 20.9664 18.7049C21.4067 19.2064 21.357 19.9699 20.8555 20.4101C17.4632 23.3883 12.0202 23.3883 8.62782 20.4101C8.12631 19.9699 8.07667 19.2064 8.51694 18.7049Z" fill="currentColor"/>
-<path id="Ellipse 5" d="M11.3578 12.0832C11.3578 13.2844 10.384 14.2582 9.18281 14.2582C7.98159 14.2582 7.00781 13.2844 7.00781 12.0832C7.00781 10.882 7.98159 9.9082 9.18281 9.9082C10.384 9.9082 11.3578 10.882 11.3578 12.0832Z" fill="currentColor"/>
-<path id="Ellipse 6" d="M21.9926 12.0832C21.9926 13.2844 21.0188 14.2582 19.8176 14.2582C18.6164 14.2582 17.6426 13.2844 17.6426 12.0832C17.6426 10.882 18.6164 9.9082 19.8176 9.9082C21.0188 9.9082 21.9926 10.882 21.9926 12.0832Z" fill="currentColor"/>
-</g>
 </svg>
 `;
 
@@ -267,6 +168,90 @@ export const momentCamera = `<svg preserveAspectRatio="none" overflow="visible" 
 <path d="M27.7917 7.66667H18.2083L13.4167 13.4167H7.66667C6.65 13.4167 5.67498 13.8205 4.95609 14.5394C4.2372 15.2583 3.83333 16.2333 3.83333 17.25V34.5C3.83333 35.5167 4.2372 36.4917 4.95609 37.2106C5.67498 37.9295 6.65 38.3333 7.66667 38.3333H38.3333C39.35 38.3333 40.325 37.9295 41.0439 37.2106C41.7628 36.4917 42.1667 35.5167 42.1667 34.5V17.25C42.1667 16.2333 41.7628 15.2583 41.0439 14.5394C40.325 13.8205 39.35 13.4167 38.3333 13.4167H32.5833L27.7917 7.66667Z" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M23 30.6667C26.1756 30.6667 28.75 28.0923 28.75 24.9167C28.75 21.741 26.1756 19.1667 23 19.1667C19.8244 19.1667 17.25 21.741 17.25 24.9167C17.25 28.0923 19.8244 30.6667 23 30.6667Z" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 </g>
+</g>
+</svg>
+`;
+
+// Dark home (section 483:3248 in file ODEXeeT7yuiT9r7AG4Q3Gh). Verbatim, no rewrites.
+
+/** Node 472:2330 — "Matching with you" chevron (Material chevron_forward glyph). */
+export const chevronForward = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="5.85833" height="9.5" viewBox="0 0 5.85833 9.5" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path id="icon" d="M3.64167 4.75L0 1.10833L1.10833 0L5.85833 4.75L1.10833 9.5L0 8.39167L3.64167 4.75Z" fill="#FEF7FF"/>
+</svg>
+`;
+
+/** Node 479:2632/483:3228 — the soft white glow behind the bell. */
+export const bellGlow = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="84.2" height="84.2" viewBox="0 0 84.2 84.2" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Ellipse 1990" filter="url(#filter0_f_0_25)">
+<circle cx="42.1" cy="42.1" r="26.5" fill="white" fill-opacity="0.31"/>
+</g>
+<defs>
+<filter id="filter0_f_0_25" x="0" y="0" width="84.2" height="84.2" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+<feGaussianBlur stdDeviation="7.8" result="effect1_foregroundBlur_0_25"/>
+</filter>
+</defs>
+</svg>
+`;
+
+/** Node 476:2323 — the blue "Chat" glyph on a feed card. */
+export const messageCircle = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="21" height="21" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="message-circle" clip-path="url(#clip0_0_23)">
+<path id="Vector" d="M2.61773 14.2992C2.74639 14.6238 2.77503 14.9794 2.69998 15.3204L1.7681 18.1991C1.73808 18.3451 1.74584 18.4963 1.79066 18.6385C1.83547 18.7806 1.91586 18.909 2.02419 19.0113C2.13252 19.1137 2.2652 19.1867 2.40965 19.2234C2.55411 19.2601 2.70555 19.2593 2.8496 19.2211L5.83598 18.3479C6.15773 18.284 6.49094 18.3119 6.7976 18.4284C8.66607 19.3009 10.7827 19.4855 12.774 18.9496C14.7653 18.4137 16.5033 17.1917 17.6815 15.4992C18.8596 13.8067 19.4021 11.7525 19.2132 9.69896C19.0244 7.64546 18.1163 5.72464 16.6493 4.2754C15.1822 2.82616 13.2505 1.94164 11.1948 1.77789C9.13916 1.61414 7.09172 2.18169 5.41374 3.3804C3.73576 4.57911 2.53507 6.33195 2.02351 8.32966C1.51195 10.3274 1.7224 12.4416 2.61773 14.2992Z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="#005DE9"/>
+</g>
+<defs>
+<clipPath id="clip0_0_23">
+<rect width="21" height="21" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+`;
+
+/** Node 73:717 — feed card comment count glyph. */
+export const chatCircleDots = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Communication / Chat_Circle_Dots">
+<path id="Vector" d="M11.9996 21C10.3645 21 8.83126 20.5639 7.50977 19.8018L7.50563 19.7994C7.37783 19.7257 7.31368 19.6887 7.25293 19.6719C7.19578 19.6561 7.14475 19.6507 7.08559 19.6548C7.02214 19.6591 6.95537 19.6813 6.82405 19.7251L4.51758 20.4939L4.51155 20.4962C4.02705 20.6577 3.78482 20.7384 3.62305 20.6807C3.48169 20.6303 3.36979 20.5187 3.31938 20.3774C3.26157 20.2152 3.34268 19.9719 3.50489 19.4853L3.50586 19.4823L4.27468 17.1758C4.3186 17.044 4.34003 16.9781 4.34437 16.9146C4.34842 16.8554 4.34401 16.804 4.32821 16.7469C4.31146 16.6863 4.27448 16.6221 4.20114 16.495L4.19819 16.4899C3.43604 15.1684 3 13.6351 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9702 21 11.9996 21ZM12 12H12.002L12.002 12.002L12 12.002V12ZM16 12H16.002L16.002 12.002L16 12.002V12ZM8 12H8.002L8.00195 12.002L8 12.002V12Z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="#8E8E93"/>
+</g>
+</svg>
+`;
+
+/** Node 479:2487 — family member count glyph. */
+export const usersRound = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="21" height="21" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="users-round">
+<path id="Vector" d="M15.75 18.375C15.75 16.5185 15.0125 14.738 13.6997 13.4253C12.387 12.1125 10.6065 11.375 8.75 11.375M8.75 11.375C6.89348 11.375 5.11301 12.1125 3.80025 13.4253C2.4875 14.738 1.75 16.5185 1.75 18.375M8.75 11.375C11.1662 11.375 13.125 9.41625 13.125 7C13.125 4.58375 11.1662 2.625 8.75 2.625C6.33375 2.625 4.375 4.58375 4.375 7C4.375 9.41625 6.33375 11.375 8.75 11.375ZM19.25 17.5002C19.25 14.5514 17.5 11.8127 15.75 10.5002C16.3253 10.0686 16.7853 9.50187 17.0893 8.85016C17.3933 8.19844 17.532 7.48183 17.4931 6.76375C17.4541 6.04566 17.2388 5.34825 16.8661 4.73322C16.4934 4.1182 15.9748 3.60453 15.3563 3.23767" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+</g>
+</svg>
+`;
+
+/** Node 687:6681 — bottom bar Home. */
+export const tabHome = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="home">
+<path id="Vector" d="M9 22V12H15V22M3 9L12 2L21 9V20C21 20.5304 20.7893 21.0391 20.4142 21.4142C20.0391 21.7893 19.5304 22 19 22H5C4.46957 22 3.96086 21.7893 3.58579 21.4142C3.21071 21.0391 3 20.5304 3 20V9Z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+</g>
+</svg>
+`;
+
+/** Node 687:6684 — bottom bar Party. */
+export const tabParty = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="party-popper">
+<path id="Vector" d="M5.8 11.3L2 22L12.7 18.21M4 3H4.01M22 8H22.01M15 2H15.01M22 20H22.01M22 2L19.76 2.75C19.1224 2.96239 18.5783 3.38964 18.2208 3.95872C17.8633 4.52781 17.7146 5.20339 17.8 5.87C17.9 6.73 17.23 7.5 16.35 7.5H15.97C15.11 7.5 14.37 8.1 14.21 8.94L14 10M22 12.9999L21.18 12.6699C20.32 12.3299 19.36 12.8699 19.2 13.7799C19.09 14.4799 18.48 14.9999 17.77 14.9999H17M11 2L11.33 2.82C11.67 3.68 11.13 4.64 10.22 4.8C9.52 4.9 9 5.52 9 6.23V7M11 13C12.93 14.93 13.83 17.17 13 18C12.17 18.83 9.93002 17.93 8.00002 16C6.07002 14.07 5.17002 11.83 6.00002 11C6.83002 10.17 9.07002 11.07 11 13Z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+</g>
+</svg>
+`;
+
+/** Node 687:6687 — bottom bar Chats. */
+export const tabChats = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="message-square-text">
+<path id="Vector" d="M7 11H17M7 15H13M7 7H15M22 17C22 17.5304 21.7893 18.0391 21.4142 18.4142C21.0391 18.7893 20.5304 19 20 19H6.828C6.29761 19.0001 5.78899 19.2109 5.414 19.586L3.212 21.788C3.1127 21.8873 2.9862 21.9549 2.84849 21.9823C2.71077 22.0097 2.56803 21.9956 2.43831 21.9419C2.30858 21.8881 2.1977 21.7971 2.11969 21.6804C2.04167 21.5637 2.00002 21.4264 2 21.286V5C2 4.46957 2.21071 3.96086 2.58579 3.58579C2.96086 3.21071 3.46957 3 4 3H20C20.5304 3 21.0391 3.21071 21.4142 3.58579C21.7893 3.96086 22 4.46957 22 5V17Z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+</g>
+</svg>
+`;
+
+/** Node 687:6690 — bottom bar Mine. */
+export const tabMine = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="user-round">
+<path id="Vector" d="M12 13C14.7614 13 17 10.7614 17 8C17 5.23858 14.7614 3 12 3C9.23858 3 7 5.23858 7 8C7 10.7614 9.23858 13 12 13ZM12 13C14.1217 13 16.1566 13.8429 17.6569 15.3431C19.1571 16.8434 20 18.8783 20 21M12 13C9.87827 13 7.84344 13.8429 6.34315 15.3431C4.84285 16.8434 4 18.8783 4 21" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
 </g>
 </svg>
 `;

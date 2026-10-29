@@ -27,13 +27,20 @@ export const colors = {
   countryPillBorder: '#999999', // miscellaneous/tab---unselected (party country chips)
   sectionAction: '#8C9198', // section "More" link (node 19:108)
   createRingBorder: 'rgba(0,0,0,0.31)', // "Create" story ring (node 19:347)
-  // Bottom nav. Figma draws it for a dark surface — pink selected item
-  // (#EB11AA label / #C32FAE icon, nodes 15:309-15:310) and white unselected
-  // ones. The home feed is white, so the bar follows the screen's own palette
-  // instead: solid black selected, muted black unselected, exactly like the
-  // Following/Party/Live tabs above it.
-  navActive: '#000000',
-  navIdle: 'rgba(0,0,0,0.5)',
+  // Dark home (section 483:3248) and its bottom bar.
+  homeCard: '#1D1D1F', // feed card fill (Frame 1597881455)
+  homeAccent: '#005DE9', // "Chat" / "Follow", the selected tab's underline
+  homeOnline: '#24AE15', // "2344" in "2344 Active Now"
+  homeBadge: '#BF0C0C', // the bell's unread count
+  homeJoin: '#2F88EE', // Family "Join"
+  navBorder: 'rgba(248,248,248,0.38)', // bottom bar outline (687:6679)
+  // Daily Rewards popup (483:2995).
+  rewardScrim: 'rgba(0,0,0,0.49)', // Rectangle 161124107
+  rewardOrange: '#FF8B25', // tile label band, subtitle, the stroke's lower end
+  rewardYellow: '#FFDE07', // Collect
+  rewardToday: 'rgba(255,222,7,0.39)', // the claimable tile
+  rewardTileBorder: 'rgba(0,0,0,0.21)',
+  rewardWash: ['rgba(254,222,15,0.46)', 'rgba(255,255,255,0.46)'] as const,
   searchFieldBorder: 'rgba(0,0,0,0.3)', // search screen field outline (node 25:394)
   searchPlaceholder: 'rgba(0,0,0,0.34)', // "Enter the name" (node 25:382)
   followLabel: '#FFFDFD', // "Follow" chip label (node 25:417)

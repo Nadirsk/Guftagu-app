@@ -5,10 +5,9 @@ import { SvgXml } from 'react-native-svg';
 import * as icons from '../../assets/home/icons';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
-import { HERO, TABS } from './geometry';
-import { Flag } from './sections';
+import { HERO, LIVE_CARD } from './geometry';
 
-// Node 50:1238's scrim reads as `rgba(217,217,217,0) 14.768% -> rgba(0,0,0,0.53)
+// Node 483:2740's scrim reads as `rgba(217,217,217,0) 14.768% -> rgba(0,0,0,0.53)
 // 51.152%`, but Figma interpolates it in STRAIGHT (non-premultiplied) RGBA: the
 // colour fades 217->0 while the alpha climbs 0->0.53, so mid-ramp it is a
 // translucent grey that lightens the photo before the black takes over. CSS and
@@ -41,24 +40,27 @@ const SCRIM_LOCATIONS = [
 ] as unknown as readonly [number, number, ...number[]];
 
 /**
- * The Live tab's hero card — node 50:1091. A full-bleed still with a scrim over
- * its lower half, the streamer's name bottom-left, a large viewer-count tab
+ * The Live tab's card — node 483:2739. A full-bleed still with a scrim over its
+ * lower half, the streamer's name bottom-left, a large viewer-count tab
  * top-right and the carousel dots at the bottom.
  *
- * The count tab is 1.1px wider than the card, and Figma clips it — hence the
- * `overflow: 'hidden'` here rather than letting it hang over the edge.
+ * The count tab runs a fraction of a pixel past the card's right edge, and Figma
+ * clips it — hence the `overflow: 'hidden'` rather than letting it hang over.
+ *
+ * `originY` is the frame y its container starts at; `LIVE_CARD` is absolute.
  */
-export default function HeroCard() {
+export default function HeroCard({ originY = 0, onPress }: { originY?: number; onPress?: () => void }) {
   const { px } = useDesignScale();
-  const hero = TABS.Live.hero;
+  const hero = LIVE_CARD;
   const { scrim, dots, streamer, badge, badgeWave, badgeCount } = HERO;
 
   return (
     <Pressable
+      onPress={onPress}
       style={{
         position: 'absolute',
         left: px(hero.x),
-        top: px(hero.y),
+        top: px(hero.y - originY),
         width: px(hero.width),
         height: px(hero.height),
         borderRadius: px(hero.radius),
@@ -71,7 +73,7 @@ export default function HeroCard() {
         resizeMode="cover"
       />
 
-      {/* Node 50:1238 — 179.85deg in Figma, i.e. straight down. See SCRIM_*. */}
+      {/* Node 483:2740 — 179.85deg in Figma, i.e. straight down. See SCRIM_*. */}
       <LinearGradient
         colors={SCRIM_COLORS}
         locations={SCRIM_LOCATIONS}
@@ -90,7 +92,7 @@ export default function HeroCard() {
         <SvgXml xml={icons.heroDots} width={px(dots.width)} height={px(dots.height)} />
       </View>
 
-      {/* node 52:1257 — avatar, then flag + title */}
+      {/* node 483:2746 — avatar, then flag + title */}
       <View
         style={[
           styles.streamer,
@@ -102,12 +104,12 @@ export default function HeroCard() {
           style={{ width: px(streamer.avatar), height: px(streamer.avatar) }}
         />
         <View style={[styles.streamerName, { gap: px(streamer.innerGap) }]}>
-          <Flag xml={icons.flagIN} width={19} height={12} />
+          <SvgXml xml={icons.flagIN} width={px(19)} height={px(12)} />
           <Text style={[styles.streamerLabel, { fontSize: px(streamer.fontSize) }]}>Riya’s Live</Text>
         </View>
       </View>
 
-      {/* node 52:1258 — the large viewer-count tab */}
+      {/* node 483:2751 — the large viewer-count tab */}
       <View style={{ position: 'absolute', left: px(badge.x), top: px(badge.y) }}>
         <SvgXml xml={icons.heroBadge} width={px(badge.width)} height={px(badge.height)} />
         <View style={{ position: 'absolute', left: px(badgeWave.x), top: px(badgeWave.y) }}>

@@ -5,7 +5,7 @@ export type RootStackParamList = {
   ProfileSetup: undefined;
   EmailAuth: undefined;
   PhoneAuth: undefined;
-  /** The tab shell: Home / Moment / Chat / Me under one fixed bottom bar. */
+  /** The tab shell: Home / Party / Chats / Mine under one fixed bottom bar. */
   Tabs: undefined;
   /** Pushed over the shell, so these cover the bar — as their frames draw. */
   Search: undefined;
@@ -21,5 +21,9 @@ export type RootStackParamList = {
   MediaViewer: { urls: string[]; index?: number };
   /** Moment notifications screen */
   MomentNotifications: undefined;
+  /** A voice room (section 66:544). Opening it joins; only its exit dialog leaves. */
+  Room: { uuid: string };
+  /** Create Room (Figma 397:2803); Start replaces it with the new room. */
+  CreateRoom: undefined;
   Home: undefined;
 };

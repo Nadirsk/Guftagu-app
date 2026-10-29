@@ -1,10 +1,10 @@
 import { useRef } from 'react';
 import {
-  NativeSyntheticEvent,
   StyleProp,
   StyleSheet,
   TextInput,
-  TextInputKeyPressEventData,
+  TextInputInstance,
+  TextInputKeyPressEvent,
   View,
   ViewStyle,
 } from 'react-native';
@@ -33,7 +33,7 @@ export default function OtpInput({
   autoFocus,
   style,
 }: OtpInputProps) {
-  const refs = useRef<(TextInput | null)[]>([]);
+  const refs = useRef<(TextInputInstance | null)[]>([]);
 
   function handleChange(index: number, text: string) {
     // Keep the last character so retyping over a filled box replaces it.
@@ -46,7 +46,7 @@ export default function OtpInput({
 
   function handleKeyPress(
     index: number,
-    e: NativeSyntheticEvent<TextInputKeyPressEventData>,
+    e: TextInputKeyPressEvent,
   ) {
     // Backspace in an already-empty box steps back instead of doing nothing.
     if (e.nativeEvent.key === 'Backspace' && !value[index] && index > 0) {
