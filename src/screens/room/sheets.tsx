@@ -21,6 +21,7 @@ import * as icons from '../../assets/room/icons';
 import { useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
 import { useDesignScale } from '../../theme/layout';
+import { Backpack, Mic, ShoppingBag } from 'lucide-react-native';
 import { colors, typography } from '../../theme/tokens';
 import {
   DRAWER,
@@ -473,24 +474,29 @@ type GiftCategory = { id: number; name_en?: string; name?: string };
 
 /** Measured off 592:7686's render — the sheet only exists in Figma as a picture. */
 const GIFT_COLORS = {
-  sheet: '#1F1F37',
-  bar: '#13121A',
-  pill: '#1C1B23',
-  selectedFill: '#533013',
-  selectedBorder: '#D9963B',
-  orange: '#F7A23B',
-  dim: '#8B8B98',
-  name: '#BFBFCB',
+  sheet: '#1F1D26',
+  bar: '#1F1D26',
+  pill: '#26242D',
+  selectedBorder: '#E48C20',
+  orange: '#F0A03E',
+  orangeRing: '#EC9527',
+  dim: '#767579',
+  price: '#8F8E93',
+  name: '#D4D3D8',
 };
 
 export function GiftSheet({
   receiver,
+  onMic,
   onClose,
   onSend,
 }: {
-  receiver: RoomUser | null;
+  receiver: RoomUser | 'all' | null;
+  /** Everyone on a mic, with the seat they are on — the faces along the top. */
+  onMic: { seat: number; user: RoomUser }[];
   onClose: () => void;
-  onSend: (gift: Gift, quantity: number) => Promise<number | void>;
+  /** `'all'` when every mic is ticked, else exactly the ticked users. */
+  onSend: (gift: Gift, quantity: number, targets: RoomUser[] | 'all') => void;
 }) {
   const { px } = useDesignScale();
   const { token } = useAuth();
@@ -498,9 +504,13 @@ export function GiftSheet({
   const [categories, setCategories] = useState<GiftCategory[]>([]);
   const [category, setCategory] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
-  const [page, setPage] = useState(0);
+  const [bag, setBag] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [coins, setCoins] = useState<number | null>(null);
+  // Mazag's faces are check marks: orange ring = ticked, white ring = not. ALL ticks every one.
+  const [ticked, setTicked] = useState<Set<string>>(
+    () => new Set(receiver && receiver !== 'all' ? [receiver.uuid] : onMic.map((m) => m.user.uuid)),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const g = GIFTS;
@@ -511,26 +521,33 @@ export function GiftSheet({
     api<{ coin_balance: number }>('/wallet', { token }).then((w) => setCoins(w.coin_balance)).catch(() => undefined);
   }, [token]);
 
-  const shown = useMemo(() => (gifts ?? []).filter((x) => category === null || x.category_id === category), [gifts, category]);
-  const perPage = g.grid.columns * g.grid.rows;
-  const pages = Math.max(1, Math.ceil(shown.length / perPage));
-  const visible = shown.slice(page * perPage, page * perPage + perPage);
-  const tabs = [{ id: null as number | null, label: 'All' }, ...categories.map((c) => ({ id: c.id as number | null, label: c.name_en ?? c.name ?? '' }))];
+  // There is no "All" tab: the first category is open until another is picked.
+  const activeCategory = category ?? categories[0]?.id ?? null;
+  const shown = useMemo(() => (gifts ?? []).filter((x) => activeCategory === null || x.category_id === activeCategory), [gifts, activeCategory]);
+  const tabs = categories.map((c) => ({ id: c.id as number | null, label: c.name_en ?? c.name ?? '' }));
   const chosen = shown.find((x) => x.id === selected) ?? null;
+  const everyone = onMic.length > 0 && onMic.every((m) => ticked.has(m.user.uuid));
+  const toggle = (uuid: string) =>
+    setTicked((t) => {
+      const next = new Set(t);
+      if (next.has(uuid)) next.delete(uuid);
+      else next.add(uuid);
+      return next;
+    });
+  const toggleAll = () => setTicked(everyone ? new Set() : new Set(onMic.map((m) => m.user.uuid)));
 
-  const send = async () => {
-    if (!chosen || !receiver) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const balance = await onSend(chosen, quantity);
-      if (typeof balance === 'number') setCoins(balance);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.displayMessage : 'Could not send that gift.');
-    } finally {
-      setBusy(false);
+  const send = () => {
+    if (!chosen || ticked.size === 0) return;
+    const price = chosen.coin_price * quantity * ticked.size;
+    if (coins !== null && price > coins) {
+      setError('Not enough coins');
+      return;
     }
+    setError(null);
+    onSend(chosen, quantity, everyone ? 'all' : onMic.filter((m) => ticked.has(m.user.uuid)).map((m) => m.user));
   };
+
+  const canSend = Boolean(chosen) && ticked.size > 0;
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -543,18 +560,45 @@ export function GiftSheet({
           bottom: 0,
           height: px(g.height),
           backgroundColor: GIFT_COLORS.sheet,
-          shadowColor: '#000',
-          shadowOpacity: 0.25,
-          shadowRadius: px(4),
-          shadowOffset: { width: 0, height: px(4) },
-          elevation: 8,
+          borderTopLeftRadius: px(14),
+          borderTopRightRadius: px(14),
+          overflow: 'hidden',
         }}
       >
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ position: 'absolute', left: 0, right: 0, top: px(g.tabs.y) }} contentContainerStyle={{ paddingLeft: px(g.tabs.x), gap: px(g.tabs.gap) }}>
-          {tabs.map((t) => {
-            const on = t.id === category;
+        {/* Who gets it: faces with a seat badge, and ALL. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ position: 'absolute', left: 0, right: px(g.faces.allWidth), top: px(g.faces.y), height: px(g.faces.size + 12) }}
+          contentContainerStyle={{ paddingLeft: px(g.faces.x), gap: px(g.faces.gap) }}
+        >
+          {onMic.map(({ seat, user }) => {
+            const on = ticked.has(user.uuid);
             return (
-              <Pressable key={String(t.id)} onPress={() => { setCategory(t.id); setPage(0); }} style={{ alignItems: 'center' }}>
+              <Pressable key={user.uuid} onPress={() => toggle(user.uuid)} hitSlop={px(4)} style={{ width: px(g.faces.size), height: px(g.faces.size + 8) }}>
+                <Image source={avatarOf(user)} style={{ width: px(g.faces.size), height: px(g.faces.size), borderRadius: px(g.faces.size / 2), borderWidth: px(1.5), borderColor: on ? GIFT_COLORS.orangeRing : '#FFFFFF' }} />
+                <View style={{ position: 'absolute', bottom: 0, alignSelf: 'center', minWidth: px(15), height: px(15), paddingHorizontal: px(4), borderRadius: px(8), backgroundColor: on ? GIFT_COLORS.orangeRing : '#2A1B3D', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: px(9), color: colors.white, fontFamily: typography.fontFamily.medium }}>{seat}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        <Pressable onPress={toggleAll} style={{ position: 'absolute', right: px(g.faces.allRight), top: px(g.faces.y - 2), width: px(g.faces.allSize), alignItems: 'center' }}>
+          <View style={{ width: px(g.faces.allSize), height: px(g.faces.allSize), borderRadius: px(g.faces.allSize / 2), alignItems: 'center', justifyContent: 'center', backgroundColor: everyone ? 'rgba(236,149,39,0.22)' : 'rgba(255,255,255,0.06)', borderWidth: px(1.5), borderColor: everyone ? GIFT_COLORS.orangeRing : 'transparent' }}>
+            <Mic size={px(18)} color={everyone ? GIFT_COLORS.orangeRing : '#6D6C73'} />
+          </View>
+          <View style={{ marginTop: px(-9), minWidth: px(30), height: px(14), borderRadius: px(7), paddingHorizontal: px(6), alignItems: 'center', justifyContent: 'center', backgroundColor: everyone ? GIFT_COLORS.orangeRing : 'transparent' }}>
+            <Text style={{ fontSize: px(9), color: colors.white, fontFamily: typography.fontFamily.medium }}>ALL</Text>
+          </View>
+        </Pressable>
+
+        {/* Tabs. */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ position: 'absolute', left: 0, right: px(66), top: px(g.tabs.y) }} contentContainerStyle={{ paddingLeft: px(g.tabs.x), gap: px(g.tabs.gap) }}>
+          {tabs.map((t) => {
+            const on = !bag && t.id === activeCategory;
+            return (
+              <Pressable key={String(t.id)} onPress={() => { setBag(false); setCategory(t.id); }} style={{ alignItems: 'center' }}>
                 <Text style={[on ? styles.semiBold : styles.regular, { fontSize: px(g.tabs.size), color: on ? colors.white : GIFT_COLORS.dim }]}>{t.label}</Text>
                 <View style={{ marginTop: px(g.tabs.underline.gap), width: px(g.tabs.underline.width), height: px(g.tabs.underline.height), borderRadius: px(2), backgroundColor: on ? colors.white : 'transparent' }} />
               </Pressable>
@@ -562,28 +606,37 @@ export function GiftSheet({
           })}
         </ScrollView>
 
-        {gifts === null ? (
-          <ActivityIndicator style={{ marginTop: px(150) }} color={colors.white} />
-        ) : visible.length === 0 ? (
-          <Text style={[styles.regular, { marginTop: px(150), textAlign: 'center', color: GIFT_COLORS.dim, fontSize: px(13) }]}>No gifts here yet</Text>
+        {/* Backpack: the gifts you already own, behind a thin rule, as in Mazag. */}
+        <View style={{ position: 'absolute', right: px(66), top: px(g.tabs.y + 4), width: StyleSheet.hairlineWidth * 2, height: px(20), backgroundColor: 'rgba(255,255,255,0.25)' }} />
+        <Pressable onPress={() => setBag((v) => !v)} hitSlop={px(8)} style={{ position: 'absolute', right: px(14), top: px(g.tabs.y - 6), width: px(38), height: px(38), borderRadius: px(19), alignItems: 'center', justifyContent: 'center', backgroundColor: bag ? 'rgba(214,120,255,0.18)' : 'transparent' }}>
+          <ShoppingBag size={px(22)} color="#F29CFF" strokeWidth={1.8} />
+        </Pressable>
+
+        {/* The gifts: four across, edge to edge, scrolling. */}
+        {bag ? (
+          <View style={{ position: 'absolute', left: 0, right: 0, top: px(g.grid.y + 40), alignItems: 'center' }}>
+            <Backpack size={px(44)} color="#6D6C73" />
+            <Text style={[styles.regular, { marginTop: px(12), fontSize: px(13), color: GIFT_COLORS.dim }]}>Your backpack is empty</Text>
+          </View>
+        ) : gifts === null ? (
+          <ActivityIndicator style={{ marginTop: px(200) }} color={colors.white} />
+        ) : shown.length === 0 ? (
+          <Text style={[styles.regular, { marginTop: px(200), textAlign: 'center', color: GIFT_COLORS.dim, fontSize: px(13) }]}>No gifts here yet</Text>
         ) : (
-          <View style={{ position: 'absolute', left: px(g.grid.x), top: px(g.grid.y), width: px(g.grid.columns * g.grid.cardWidth + (g.grid.columns - 1) * g.grid.colGap) + 1, flexDirection: 'row', flexWrap: 'wrap', columnGap: px(g.grid.colGap), rowGap: px(g.grid.rowGap) }}>
-            {visible.map((gift) => {
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            style={{ position: 'absolute', left: 0, right: 0, top: px(g.grid.y), bottom: px(g.bar.height) }}
+            contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap' }}
+          >
+            {shown.map((gift) => {
               const on = gift.id === selected;
               return (
                 <Pressable
                   key={gift.id}
                   onPress={() => setSelected(gift.id)}
-                  style={{
-                    width: px(g.grid.cardWidth),
-                    height: px(g.grid.cardHeight),
-                    borderRadius: px(8),
-                    borderWidth: on ? 1.5 : 0,
-                    borderColor: GIFT_COLORS.selectedBorder,
-                    backgroundColor: on ? GIFT_COLORS.selectedFill : 'transparent',
-                    alignItems: 'center',
-                  }}
+                  style={{ width: '25%', height: px(g.grid.cardHeight), alignItems: 'center' }}
                 >
+                  <View style={{ position: 'absolute', left: px(2), right: px(2), top: px(2), bottom: px(2), borderRadius: px(10), borderWidth: on ? px(1.5) : 0, borderColor: GIFT_COLORS.selectedBorder }} />
                   {gift.thumbnail_url ? (
                     <Image source={{ uri: gift.thumbnail_url }} resizeMode="contain" style={{ marginTop: px(g.thumb.top), width: px(g.thumb.size), height: px(g.thumb.size) }} />
                   ) : (
@@ -591,48 +644,43 @@ export function GiftSheet({
                   )}
                   <View style={{ position: 'absolute', top: px(g.price.top), flexDirection: 'row', alignItems: 'center', gap: px(3) }}>
                     <Coin size={px(g.price.coin)} />
-                    <Text style={[styles.regular, { fontSize: px(g.price.size), color: GIFT_COLORS.dim }]}>{gift.coin_price}</Text>
+                    <Text style={[styles.regular, { fontSize: px(g.price.size), color: GIFT_COLORS.price }]}>{gift.coin_price}</Text>
                   </View>
-                  <Text numberOfLines={1} style={[styles.regular, { position: 'absolute', top: px(g.name.top), width: px(g.grid.cardWidth - 4), textAlign: 'center', fontSize: px(g.name.size), color: on ? colors.white : GIFT_COLORS.name }]}>
+                  <Text numberOfLines={1} style={[styles.regular, { position: 'absolute', top: px(g.name.top), width: px(94), textAlign: 'center', fontSize: px(g.name.size), color: on ? colors.white : GIFT_COLORS.name }]}>
                     {gift.name_en}
                   </Text>
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
         )}
-
-        {/* The page dots — tap one to turn the page. */}
-        <View style={{ position: 'absolute', top: px(g.dots.y), left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: px(g.dots.gap) }}>
-          {Array.from({ length: pages }, (_, i) => (
-            <Pressable key={i} hitSlop={px(6)} onPress={() => setPage(i)} style={{ width: px(g.dots.size), height: px(g.dots.size), borderRadius: px(g.dots.size / 2), backgroundColor: i === page ? colors.white : GIFT_COLORS.dim }} />
-          ))}
-        </View>
 
         {error ? (
           <Text numberOfLines={1} style={[styles.regular, { position: 'absolute', left: px(16), right: px(16), bottom: px(g.bar.height + 4), textAlign: 'center', fontSize: px(11), color: '#FF6B6B' }]}>{error}</Text>
         ) : null}
 
+        {/* Balance on the left, quantity + Send on the right. */}
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: px(g.bar.height), backgroundColor: GIFT_COLORS.bar }}>
-          <View style={{ position: 'absolute', left: px(g.bar.pill.x), top: px((g.bar.height - g.bar.pill.height) / 2), height: px(g.bar.pill.height), borderRadius: px(g.bar.pill.radius), backgroundColor: GIFT_COLORS.pill, flexDirection: 'row', alignItems: 'center', paddingHorizontal: px(12), gap: px(6) }}>
-            <Coin size={px(16)} />
-            <Text style={[styles.medium, { fontSize: px(15), color: colors.white }]}>{coins === null ? '—' : coins.toFixed(2)}</Text>
-            <Text style={[styles.regular, { marginLeft: px(10), fontSize: px(15), color: GIFT_COLORS.orange }]}>Recharge  ›</Text>
+          <View style={{ position: 'absolute', left: px(g.bar.pill.x), top: px((g.bar.height - g.bar.pill.height) / 2), height: px(g.bar.pill.height), borderRadius: px(g.bar.pill.radius), backgroundColor: GIFT_COLORS.pill, flexDirection: 'row', alignItems: 'center', paddingHorizontal: px(10), gap: px(5) }}>
+            <Coin size={px(15)} />
+            <Text style={[styles.regular, { fontSize: px(14), color: colors.white }]}>{coins === null ? '—' : coins.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+            <View style={{ width: StyleSheet.hairlineWidth * 2, height: px(14), marginHorizontal: px(8), backgroundColor: 'rgba(255,255,255,0.3)' }} />
+            <Text style={[styles.regular, { fontSize: px(14), color: GIFT_COLORS.orange }]}>Recharge  ›</Text>
           </View>
 
-          <View style={{ position: 'absolute', right: px(16), top: px((g.bar.height - g.bar.pill.height) / 2), width: px(g.bar.qty.width), height: px(g.bar.pill.height), borderRadius: px(g.bar.pill.radius), borderWidth: 1, borderColor: GIFT_COLORS.orange, flexDirection: 'row', alignItems: 'center', overflow: 'hidden' }}>
+          <View style={{ position: 'absolute', right: px(14), top: px((g.bar.height - g.bar.pill.height) / 2), width: px(g.bar.qty.width), height: px(g.bar.pill.height), borderRadius: px(g.bar.pill.radius), borderWidth: px(1), borderColor: GIFT_COLORS.orange, flexDirection: 'row', alignItems: 'center', overflow: 'hidden' }}>
             <Pressable
-              onPress={() => setQuantity((q) => (q >= 99 ? 1 : q === 1 ? 10 : q === 10 ? 99 : 1))}
+              onPress={() => setQuantity((q) => (q === 1 ? 7 : q === 7 ? 77 : q === 77 ? 177 : 1))}
               style={{ flex: 1, height: '100%', alignItems: 'center', justifyContent: 'center', flexDirection: 'row' }}
             >
-              <Text style={[styles.regular, { fontSize: px(14), color: colors.white }]}>{quantity} ›</Text>
+              <Text style={[styles.regular, { fontSize: px(14), color: colors.white }]}>{quantity}  ›</Text>
             </Pressable>
             <Pressable
               onPress={send}
-              disabled={!chosen || !receiver || busy}
-              style={{ width: px(g.bar.send.width), height: '100%', backgroundColor: GIFT_COLORS.orange, alignItems: 'center', justifyContent: 'center', opacity: !chosen || !receiver ? 0.6 : 1 }}
+              disabled={!canSend}
+              style={{ width: px(g.bar.send.width), height: '100%', backgroundColor: GIFT_COLORS.orange, alignItems: 'center', justifyContent: 'center', opacity: canSend ? 1 : 0.6 }}
             >
-              {busy ? <ActivityIndicator color={colors.white} size="small" /> : <Text style={[styles.medium, { fontSize: px(15), color: colors.white }]}>Send</Text>}
+              {busy ? <ActivityIndicator color={colors.white} size="small" /> : <Text style={[styles.regular, { fontSize: px(14), color: colors.white }]}>Send</Text>}
             </Pressable>
           </View>
         </View>
@@ -641,7 +689,6 @@ export function GiftSheet({
   );
 }
 
-/** The gold coin the render prints beside every price. */
 function Coin({ size }: { size: number }) {
   return (
     <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#F6C00E', borderWidth: size / 8, borderColor: '#E59B05' }} />

@@ -31,8 +31,12 @@ import { colors, typography } from '../../theme/tokens';
 import { EnteringOverlay, EntranceBanner } from './EntryEffects';
 import { ActionPill, AnnouncementDialog, BottomBar, ChatBar, ClearDialog, type ChatTab, HostMenu, type HostMenuKey, LockGlyph, PowerOverlay, TopRoomPill, ViewersPill } from './RoomChrome';
 import { SeatMenu } from './SeatMenu';
-import { CasualBubble, Composer, EmojiSheet } from './EmojiSheet';
+import { CASUAL_FACES, CasualBubble, Composer, EmojiSheet } from './EmojiSheet';
+import { emojiSource } from '../../assets/room/emoji';
+import { ComboButton, GiftFx } from './GiftFx';
 import { useVoice } from './voice';
+import { LuckyWheelSheet } from './wheel';
+import { claimShare, EnvelopeClaimedPopup, EnvelopeOpenPopup, EnvelopeSheet, EnvelopeTile, type RedEnvelope } from './envelope';
 import {
   BACKDROP,
   CHAT,
@@ -80,10 +84,14 @@ type Overlay =
   | { kind: 'tools' }
   | { kind: 'kickout'; user: RoomUser }
   | { kind: 'seatMenu' }
-  | { kind: 'gifts'; receiver: RoomUser | null }
+  | { kind: 'gifts'; receiver: RoomUser | 'all' | null }
   | { kind: 'music' }
   | { kind: 'share' }
-  | { kind: 'games' };
+  | { kind: 'games' }
+  | { kind: 'envelope' }
+  | { kind: 'envelopeOpen' }
+  | { kind: 'envelopeClaimed' }
+  | { kind: 'wheel' };
 
 /** A host tool waiting for its seat: Tools → Kick-Out / Mute / Seat Lock, then tap. */
 type SeatMode = 'kick' | 'mute' | 'lock' | null;
@@ -114,6 +122,7 @@ export default function RoomScreen() {
   const [seatMode, setSeatMode] = useState<SeatMode>(null);
   const [chatTab, setChatTab] = useState<ChatTab>('All');
   const [chatOpen, setChatOpen] = useState(false);
+  const [combo, setCombo] = useState<{ giftId: number; target: RoomUser | 'all'; run: number } | null>(null);
   const [draft, setDraft] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [composer, setComposer] = useState<null | 'keys' | 'grid'>(null);
@@ -131,6 +140,8 @@ export default function RoomScreen() {
   const [speakerOff, setSpeakerOff] = useState(false);
   const [followed, setFollowed] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  // Section 575:2742. Kept on this screen only: the server has no red envelopes yet.
+  const [envelope, setEnvelope] = useState<RedEnvelope | null>(null);
   const toast = useToast();
 
   useEffect(() => {
@@ -243,6 +254,8 @@ export default function RoomScreen() {
       toast.show('Chat cleared');
     } else if (key === 'music') {
       setOverlay({ kind: 'music' });
+    } else if (key === 'redPacket') {
+      setOverlay({ kind: 'envelope' });
     } else if (key === 'kick' || key === 'mute' || key === 'lock') {
       if (!isHost) {
         toast.show('Only the host can do that');
@@ -256,8 +269,8 @@ export default function RoomScreen() {
     }
   };
 
-  const send = async () => {
-    const body = draft.trim();
+  const send = async (text?: string) => {
+    const body = (text ?? draft).trim();
     if (!body) return;
     setDraft('');
     setEmojiOpen(false);
@@ -407,15 +420,29 @@ export default function RoomScreen() {
       </ScrollView>
 
       {/* ------------------------------------------------ right column */}
-      <Pressable onPress={() => setOverlay({ kind: 'games' })} style={{ position: 'absolute', left: px(SIDE.wheel.label.centerX - SIDE.wheel.label.width / 2), top: px(SIDE.wheel.y + extra - 40), width: px(SIDE.wheel.label.width), alignItems: 'center' }}>
-        <Image source={require('../../assets/room/lucky-wheel.png')} resizeMode="cover" style={{ width: px(SIDE.wheel.size), height: px(SIDE.wheel.size) }} />
-        <Text style={[styles.regular, { marginTop: px(2), fontSize: px(SIDE.wheel.label.size), color: colors.white }]}>Lucky Wheel</Text>
+      {/* Menu (577:5059): kept where Figma puts it against the wheel — 24px above it,
+          its centre 2px right of the wheel's (12 + 20 from the edge). Opens Tools. */}
+      <Pressable
+        onPress={() => setOverlay({ kind: 'tools' })}
+        hitSlop={px(6)}
+        style={{ position: 'absolute', right: px(12 + 20 - 2 - SIDE.menu.size / 2), top: px(SIDE.menu.y + extra - 40), width: px(SIDE.menu.size), height: px(SIDE.menu.size) }}
+      >
+        <SvgXml xml={icons.menu} width={px(SIDE.menu.svg.size)} height={px(SIDE.menu.svg.size)} style={{ position: 'absolute', left: px(SIDE.menu.svg.dx), top: px(SIDE.menu.svg.dy) }} />
       </Pressable>
+      <Pressable onPress={() => setOverlay({ kind: 'wheel' })} style={{ position: 'absolute', right: px(12 + 20 - 40), top: px(SIDE.wheel.y + extra - 40), width: px(80), alignItems: 'center' }}>
+        <Image source={require('../../assets/room/lucky-wheel.png')} resizeMode="cover" style={{ width: px(SIDE.wheel.size), height: px(SIDE.wheel.size) }} />
+        <Text numberOfLines={1} style={[styles.regular, { marginTop: px(2), textAlign: 'center', fontSize: px(SIDE.wheel.label.size), color: colors.white }]}>Lucky Wheel</Text>
+      </Pressable>
+
+      {/* The envelope stays in the room until you have claimed it or it is empty. */}
+      {envelope && me && envelope.claims.length < envelope.count && !envelope.claims.some((c) => c.user.uuid === me.uuid) ? (
+        <EnvelopeTile extra={extra} onPress={() => setOverlay({ kind: 'envelopeOpen' })} />
+      ) : null}
 
       {room.casuals.map((c) => {
         const i = seats.findIndex((x) => x.user?.uuid === c.user?.uuid);
         const spot = i >= 0 ? spots[i] : null;
-        const size = spot ? spot.ring * 1.3 : 120;
+        const size = spot ? spot.ring * (c.type === 'emoji' ? 2.2 : c.type === 'machine' ? 1.5 : 1.15) : 120;
         return (
           <CasualBubble
             key={c.id}
@@ -427,15 +454,42 @@ export default function RoomScreen() {
           />
         );
       })}
+      <GiftFx
+        feed={room.giftFeed}
+        pillTop={tabsY - 56}
+        centerY={(FRAME.height + extra) * 0.4}
+        seatPoint={(uuid) => {
+          const i = seats.findIndex((x) => x.user?.uuid === uuid);
+          if (i >= 0) return { x: spots[i].x + spots[i].ring / 2, y: spots[i].y + spots[i].ring / 2 };
+          return snapshot?.owner?.uuid === uuid ? { x: 35, y: 59 } : null;
+        }}
+      />
+      {combo ? (
+        <ComboButton
+          runKey={combo.run}
+          top={CONTROLS.input.y + extra - 96}
+          onExpire={() => setCombo(null)}
+          onPress={() => {
+            const c = combo;
+            setCombo({ ...c, run: Date.now() });
+            run(() => room.sendGift(c.giftId, c.target === 'all' ? 'all' : c.target.uuid, 1));
+          }}
+          onQuantity={(n) => {
+            const c = combo;
+            setCombo({ ...c, run: Date.now() });
+            run(() => room.sendGift(c.giftId, c.target === 'all' ? 'all' : c.target.uuid, n));
+          }}
+        />
+      ) : null}
       {/* ------------------------------------------------ bottom bar */}
       <View style={{ position: 'absolute', left: px(12), right: px(12), top: px(CONTROLS.input.y + extra - 2), }}>
         <BottomBar
           draft={draft}
           onDraft={setDraft}
-          onSend={send}
+          onSend={() => send()}
           onEmoji={() => setEmojiOpen((v) => !v)}
           onType={() => setComposer('keys')}
-          onGift={() => setOverlay({ kind: 'gifts', receiver: giftReceiver() })}
+          onGift={() => setOverlay({ kind: 'gifts', receiver: 'all' })}
           speakerOff={speakerOff}
           onSpeaker={() => { setSpeakerOff((v) => !v); toast.show(speakerOff ? 'Speaker on' : 'Speaker off'); }}
           seated={Boolean(mySeat)}
@@ -495,9 +549,9 @@ export default function RoomScreen() {
         <EmojiSheet
           onClose={() => setEmojiOpen(false)}
           onKeyboard={() => { setEmojiOpen(false); setComposer('keys'); }}
-          onSmiley={(e) => { setEmojiOpen(false); run(() => room.sendMessage(e)); }}
+          onSmiley={(e) => { run(() => room.sendMessage(e)); }}
+          onAnimated={(id) => { run(() => room.playEmoji(id)); }}
           onCasual={(kind) => {
-            setEmojiOpen(false);
             run(() => room.playCasual(kind));
           }}
         />
@@ -509,12 +563,11 @@ export default function RoomScreen() {
           kb={kb}
           draft={draft}
           onDraft={setDraft}
-          onSend={async () => { await send(); setComposer(null); }}
+          onSend={(t) => { setComposer(null); send(t); }}
           onClose={() => { Keyboard.dismiss(); setComposer(null); }}
           onImage={() => toast.show('Coming soon')}
           recent={recentEmoji}
           onPickEmoji={(e) => {
-            setDraft((d) => d + e);
             setRecentEmoji((l) => [e, ...l.filter((x) => x !== e)].slice(0, 5));
           }}
         />
@@ -535,6 +588,46 @@ export default function RoomScreen() {
       ) : null}
       {overlay?.kind === 'leave' ? <LeaveDialog busy={leaving} onCancel={() => setOverlay(null)} onConfirm={leave} /> : null}
       {overlay?.kind === 'tools' ? <ToolsSheet extra={extra} onClose={() => setOverlay(null)} onPick={onTool} /> : null}
+      {overlay?.kind === 'wheel' ? (
+        <LuckyWheelSheet
+          onClose={() => setOverlay(null)}
+          // Section 575:3421 has no server side yet: no spins, prizes or recharge to call.
+          onSpin={() => toast.show('Coming soon')}
+          onRecharge={() => toast.show('Coming soon')}
+        />
+      ) : null}
+      {overlay?.kind === 'envelope' && me ? (
+        <EnvelopeSheet
+          extra={extra}
+          onClose={() => setOverlay(null)}
+          onSend={(gold, count) => {
+            setEnvelope({ id: `local-${Date.now()}`, sender: { uuid: me.uuid, display_name: me.display_name ?? null, avatar_url: me.avatar_url ?? null }, gold, count, claims: [] });
+            setOverlay(null);
+          }}
+        />
+      ) : null}
+      {overlay?.kind === 'envelopeOpen' && envelope ? (
+        <EnvelopeOpenPopup
+          extra={extra}
+          sender={envelope.sender}
+          onClose={() => setOverlay(null)}
+          onOpen={() => {
+            if (me && !envelope.claims.some((c) => c.user.uuid === me.uuid)) {
+              const user: RoomUser = { uuid: me.uuid, display_name: me.display_name ?? null, avatar_url: me.avatar_url ?? null };
+              setEnvelope({ ...envelope, claims: [...envelope.claims, { user, amount: claimShare(envelope), at: new Date() }] });
+            }
+            setOverlay({ kind: 'envelopeClaimed' });
+          }}
+        />
+      ) : null}
+      {overlay?.kind === 'envelopeClaimed' && envelope ? (
+        <EnvelopeClaimedPopup
+          extra={extra}
+          envelope={envelope}
+          mine={envelope.claims.find((c) => c.user.uuid === me?.uuid) ?? null}
+          onClose={() => setOverlay(null)}
+        />
+      ) : null}
       {overlay?.kind === 'kickout' ? (
         <KickoutSheet
           extra={extra}
@@ -549,12 +642,30 @@ export default function RoomScreen() {
       {overlay?.kind === 'gifts' ? (
         <GiftSheet
           receiver={overlay.receiver}
+          onMic={seats.flatMap((s) => (s.user && s.user.uuid !== me?.uuid ? [{ seat: s.seat_number, user: s.user }] : []))}
           onClose={() => setOverlay(null)}
-          onSend={async (gift, quantity) => {
-            if (!overlay.receiver) return;
-            const res = await room.sendGift(gift.id, overlay.receiver.uuid, quantity);
-            toast.show(`Sent ${gift.name_en} to ${res.receiver.display_name ?? 'them'}`);
-            return res.coin_balance;
+          onSend={(gift, quantity, targets) => {
+            const to = targets === 'all' ? seats.flatMap((s) => (s.user && s.user.uuid !== me?.uuid ? [s.user] : [])) : targets;
+            const batch = to.length > 1 ? `local-${Date.now()}` : null;
+            const mine: RoomUser | null = me ? { uuid: me.uuid, display_name: me.display_name ?? null, avatar_url: me.avatar_url ?? null } : null;
+            // Mazag plays it the instant you tap: close the sheet, draw the gift, settle the bill after.
+            room.pushGift(
+              to.map((u, i) => ({
+                id: `local-${Date.now()}-${i}`,
+                batch,
+                sender: mine,
+                receiver: u,
+                gift: { code: gift.name_en, thumbnail_url: gift.thumbnail_url },
+                quantity,
+                coin_value: gift.coin_price * quantity,
+                local: true,
+              })),
+            );
+            setCombo({ giftId: gift.id, target: targets === 'all' ? 'all' : targets[0], run: Date.now() });
+            setOverlay(null);
+            (targets === 'all' ? room.sendGift(gift.id, 'all', quantity).then(() => undefined) : Promise.all(targets.map((t) => room.sendGift(gift.id, t.uuid, quantity))).then(() => undefined)).catch((e) =>
+              toast.show(e instanceof Error ? e.message : 'Could not send that gift.'),
+            );
           }}
         />
       ) : null}
@@ -775,6 +886,8 @@ function ChatRow({ user, text, gift }: { user: RoomUser | null; text: string; gi
   const { px } = useDesignScale();
   const c = CHAT;
   const trimmed = text.trim();
+  const sticker = /^\[emoji:(\d+)\]$/.exec(trimmed);
+  const roll = /^\[casual:(dice|mora|machine):([\d,]+)\]$/.exec(trimmed);
   const emojiOnly = trimmed.length > 0 && Array.from(trimmed).length <= 4 && /^[^\x00-\x7F]+$/.test(trimmed);
   // Mazag's layout: a small face on the left; name and badges on a line, the words in a dark bubble under them.
   return (
@@ -793,7 +906,20 @@ function ChatRow({ user, text, gift }: { user: RoomUser | null; text: string; gi
             />
           </View>
         </View>
-        {gift ? (
+        {roll ? (
+          // Mazag's result tile: a blue tech frame around the dice face / hand / the three digits.
+          <View style={{ marginTop: px(4), width: px(74), height: px(74), borderRadius: px(8), borderWidth: px(2), borderColor: '#3AA7E8', backgroundColor: '#0C3A5E', alignItems: 'center', justifyContent: 'center' }}>
+            {roll[1] === 'machine' ? (
+              <Text style={{ fontFamily: typography.fontFamily.medium, fontSize: px(26), fontStyle: 'italic', color: '#F4C45A', letterSpacing: px(2) }}>{roll[2].split(',').join('')}</Text>
+            ) : (
+              <Image source={roll[1] === 'dice' ? CASUAL_FACES.dice[Number(roll[2]) - 1] : CASUAL_FACES.mora[Number(roll[2])]} resizeMode="contain" style={{ width: px(52), height: px(52) }} />
+            )}
+          </View>
+        ) : sticker && emojiSource(Number(sticker[1])) ? (
+          <View style={{ marginTop: px(4), width: px(74), height: px(74), borderRadius: px(10), backgroundColor: 'rgba(40,30,28,0.62)', alignItems: 'center', justifyContent: 'center' }}>
+            <Image source={emojiSource(Number(sticker[1]))} resizeMode="contain" style={{ width: px(60), height: px(60) }} />
+          </View>
+        ) : gift ? (
           // Mazag's gift line: a gold card, "To <name>", the gift, "x N", and its picture on the right.
           <View style={{ marginTop: px(4), minWidth: px(190), maxWidth: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: px(10), paddingHorizontal: px(12), paddingVertical: px(8), borderRadius: px(10), backgroundColor: 'rgba(168,126,58,0.55)' }}>
             <View style={{ flexShrink: 1 }}>
@@ -903,13 +1029,23 @@ type Row = { key: string; user: RoomUser | null; text: string; at: number; entry
 /** All = messages and gifts by time; Message and Gift are each on their own. */
 function chatRows(tab: ChatTab, messages: ChatMessage[], gifts: GiftEvent[]): Row[] {
   const fromMessages = messages.map((m) => ({ key: m.uuid, user: m.user, text: m.body, at: time(m.created_at), entry: m.entry }));
-  const fromGifts = gifts.map((g, i) => ({
-    key: `gift-${i}-${g.created_at}`,
-    user: g.sender,
-    text: '',
-    at: time(g.created_at),
-    gift: { to: g.receiver?.display_name ?? 'someone', name: g.gift.code, qty: g.quantity, image: g.gift.thumbnail_url },
-  }));
+  // An ALL send is one row per receiver on the server; show it as a single "To All on mic" card.
+  const fromGifts: Row[] = [];
+  gifts.forEach((g, i) => {
+    const at = time(g.created_at);
+    const prev = fromGifts[fromGifts.length - 1];
+    if (prev?.gift && prev.user?.uuid === g.sender?.uuid && prev.gift.name === g.gift.code && Math.abs(at - prev.at) <= 2000) {
+      prev.gift.to = 'All on mic';
+      return;
+    }
+    fromGifts.push({
+      key: `gift-${i}-${g.created_at}`,
+      user: g.sender,
+      text: '',
+      at,
+      gift: { to: g.receiver?.display_name ?? 'someone', name: g.gift.code, qty: g.quantity, image: g.gift.thumbnail_url },
+    });
+  });
   if (tab === 'Chat') return fromMessages.filter((m) => !m.entry);
   if (tab === 'Gifts') return fromGifts;
   return [...fromMessages, ...fromGifts].sort((a, b) => a.at - b.at);

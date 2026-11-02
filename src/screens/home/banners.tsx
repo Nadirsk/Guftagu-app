@@ -1,4 +1,4 @@
-import { Image, ImageSourcePropType, StyleSheet, Text, View } from 'react-native';
+import { Image, ImageSourcePropType, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
@@ -51,7 +51,11 @@ type BannerSpec = {
   };
 };
 
-/** Group 8921 — the left banner, the only one without a ribbon. */
+/**
+ * Group 8921 — the left banner. Figma draws it without a ribbon; it wears the
+ * Weekly Star one (same art, same placement) labelled "Ranking", and opens the
+ * rankings screen.
+ */
 export const BANNER_LEFT: BannerSpec = {
   at: BANNERS.left,
   background: art.smallLeft,
@@ -65,6 +69,13 @@ export const BANNER_LEFT: BannerSpec = {
     left: { x: 9, y: 39, width: 45.459, height: 40.531 },
     right: { x: 127, y: 39, width: 45.444, height: 40.531 },
     center: { x: 59, y: 15, width: 61, height: 58 },
+  },
+  ribbon: {
+    source: art.ribbonWeeklyStar,
+    label: 'Ranking',
+    box: { x: 28, y: -18, width: 116, height: 44 },
+    paddingTop: 15,
+    paddingBottom: 16,
   },
   photoSources: {
     left: require('../../assets/home/b1-left.png'),
@@ -136,7 +147,7 @@ export const BANNER_WIDE: BannerSpec = {
   },
 };
 
-export function TrioBanner({ spec }: { spec: BannerSpec }) {
+export function TrioBanner({ spec, onPress }: { spec: BannerSpec; onPress?: () => void }) {
   const { px } = useDesignScale();
   const box = (b: Box) => ({
     position: 'absolute' as const,
@@ -152,7 +163,9 @@ export function TrioBanner({ spec }: { spec: BannerSpec }) {
   const fill = { width: px(spec.size.width), height: px(spec.size.height) };
 
   return (
-    <View
+    <Pressable
+      disabled={!onPress}
+      onPress={onPress}
       style={{
         position: 'absolute',
         left: px(spec.at.x),
@@ -215,7 +228,7 @@ export function TrioBanner({ spec }: { spec: BannerSpec }) {
           </Text>
         </View>
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 

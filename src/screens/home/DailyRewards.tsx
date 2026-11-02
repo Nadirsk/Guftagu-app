@@ -1,5 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
@@ -20,28 +21,93 @@ const art = {
   coin: require('../../assets/home/reward-coin.png'),
 };
 
-type Reward = { label: string; coins: boolean };
+export type CheckinDay = {
+  day: number;
+  reward_type: string | null;
+  reward_value: number | null;
+  status: 'claimed' | 'today' | 'locked' | 'unavailable';
+};
 
-// Frames 1597881084 / 1597881101 / 1597881100, then 1597881106-8, in reading order.
-const DAYS: Reward[] = [
-  { label: '100 coins', coins: true },
-  { label: '200 coins', coins: true },
-  { label: '200 coins', coins: true },
-  { label: 'Chat Bubble', coins: false },
-  { label: '300 coins', coins: true },
-  { label: 'Entry effect', coins: false },
-];
+const unitOf = (type: string | null) => (type === 'diamonds' ? 'diamonds' : 'coins');
+const labelOf = (d: CheckinDay) => (d.reward_value == null ? 'Reward' : `${d.reward_value} ${unitOf(d.reward_type)}`);
 
-const TODAY = 0;
+/** Coins that fly out of the Collect button when the reward is taken. */
+function CoinBurst({ run, size }: { run: number; size: number }) {
+  const t = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!run) return;
+    t.setValue(0);
+    Animated.timing(t, { toValue: 1, duration: 1100, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [run, t]);
+  if (!run) return null;
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0 }}>
+      {Array.from({ length: 14 }, (_, i) => {
+        const angle = (Math.PI * (i + 0.5)) / 14 + Math.PI;
+        const dist = size * (2.2 + (i % 3) * 0.7);
+        return (
+          <Animated.Image
+            key={i}
+            source={art.coin}
+            style={{
+              position: 'absolute',
+              width: size,
+              height: size,
+              opacity: t.interpolate({ inputRange: [0, 0.15, 0.8, 1], outputRange: [0, 1, 1, 0] }),
+              transform: [
+                { translateX: t.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(angle) * dist] }) },
+                { translateY: t.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(angle) * dist * 1.2 + dist * 0.5] }) },
+                { rotate: t.interpolate({ inputRange: [0, 1], outputRange: ['0deg', `${(i % 2 ? 1 : -1) * 360}deg`] }) },
+                { scale: t.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.3, 1.2, 0.8] }) },
+              ],
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}
 
-export default function DailyRewards({ onCollect }: { onCollect: () => void }) {
+export default function DailyRewards({
+  week,
+  onClaim,
+  onClose,
+}: {
+  week: CheckinDay[];
+  /** Resolves with the reward just paid, or null when the claim failed. */
+  onClaim: () => Promise<{ reward_type: string; reward_value: number } | null>;
+  onClose: () => void;
+}) {
   const { px } = useDesignScale();
-  const { ribbon, title, card, wash, subtitle, grid, tile, collect } = REWARDS;
+  const [days, setDays] = useState(week);
+  const [busy, setBusy] = useState(false);
+  const [won, setWon] = useState<{ reward_type: string; reward_value: number } | null>(null);
+  const [burst, setBurst] = useState(0);
+  const pop = useRef(new Animated.Value(0)).current;
+  const claimed = days.every((x) => x.status !== 'today');
+
+  const collect = async () => {
+    if (busy || won) return;
+    if (claimed) return onClose();
+    setBusy(true);
+    const got = await onClaim();
+    setBusy(false);
+    if (!got) return onClose();
+    setWon(got);
+    setBurst((n) => n + 1);
+    setDays((list) => list.map((x) => (x.status === 'today' ? { ...x, status: 'claimed' } : x)));
+    pop.setValue(0);
+    Animated.spring(pop, { toValue: 1, friction: 5, tension: 90, useNativeDriver: true }).start();
+    setTimeout(onClose, 2200);
+  };
+
+  const { ribbon, title, card, wash, subtitle, grid, tile, collect: box } = REWARDS;
   const inner = { width: card.width - card.stroke * 2, height: card.height - card.stroke * 2 };
   const gridLeft = (inner.width - grid.width) / 2;
 
   return (
     <View style={[StyleSheet.absoluteFill, styles.scrim]}>
+      <Pressable onPress={onClose} style={StyleSheet.absoluteFill} />
       <View
         style={{
           width: px(REWARDS.width),
@@ -98,29 +164,34 @@ export default function DailyRewards({ onCollect }: { onCollect: () => void }) {
             </Text>
           </LinearGradient>
 
-          {DAYS.map((reward, index) => {
-            const column = index % 3;
-            const row = Math.floor(index / 3);
+          {days.map((reward, index) => {
+            const wide = reward.day === 7;
+            const column = wide ? 0 : index % 3;
+            const row = wide ? 2 : Math.floor(index / 3);
+            const width = wide ? grid.width : tile.width;
+            const isToday = reward.status === 'today';
+            const isClaimed = reward.status === 'claimed';
             return (
               <View
-                key={index}
+                key={reward.day}
                 style={[
                   styles.tile,
                   {
                     left: px(gridLeft + column * (tile.width + grid.columnGap)),
                     top: px(grid.y + row * (tile.height + grid.rowGap)),
-                    width: px(tile.width),
+                    width: px(width),
                     height: px(tile.height),
                     borderRadius: px(tile.radius),
                     borderWidth: tile.border,
                   },
-                  index === TODAY && styles.today,
+                  isToday && styles.today,
                 ]}
               >
+                <Text style={[styles.dayText, { fontSize: px(10), top: px(3), left: px(6) }]}>Day {reward.day}</Text>
                 <View
                   style={{
                     position: 'absolute',
-                    left: px(tile.coins.x),
+                    left: px(wide ? (width - tile.coins.width) / 2 : tile.coins.x),
                     top: px(tile.coins.y),
                     width: px(tile.coins.width),
                     height: px(tile.coins.height),
@@ -129,65 +200,74 @@ export default function DailyRewards({ onCollect }: { onCollect: () => void }) {
                 >
                   <Image
                     source={art.coins}
-                    style={{
-                      position: 'absolute',
-                      left: px(tile.coins.imageX),
-                      width: px(tile.coins.imageWidth),
-                      height: px(tile.coins.height),
-                    }}
+                    style={{ position: 'absolute', left: px(tile.coins.imageX), width: px(tile.coins.imageWidth), height: px(tile.coins.height) }}
                   />
                 </View>
-                <View
-                  style={[
-                    styles.band,
-                    {
-                      left: px(tile.band.x),
-                      top: px(tile.band.y),
-                      width: px(tile.band.width),
-                      height: px(tile.band.height),
-                    },
-                  ]}
-                />
+                <View style={[styles.band, { left: px(tile.band.x), top: px(tile.band.y), width: px(width), height: px(tile.band.height) }]} />
                 <View style={[styles.label, { top: px(tile.label.y), gap: px(tile.label.gap) }]}>
-                  {reward.coins ? (
-                    <Image
-                      source={art.coin}
-                      style={{ width: px(tile.label.coin), height: px(tile.label.coin) }}
-                    />
-                  ) : null}
-                  <Text
-                    numberOfLines={1}
-                    style={[
-                      styles.labelText,
-                      { fontSize: px(tile.label.size), lineHeight: px(tile.label.height) },
-                    ]}
-                  >
-                    {reward.label}
+                  <Image source={art.coin} style={{ width: px(tile.label.coin), height: px(tile.label.coin) }} />
+                  <Text numberOfLines={1} style={[styles.labelText, { fontSize: px(tile.label.size), lineHeight: px(tile.label.height) }]}>
+                    {labelOf(reward)}
                   </Text>
                 </View>
+                {isClaimed ? (
+                  // A day already taken: dimmed, with a green tick over it.
+                  <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' }]}>
+                    <View style={{ width: px(30), height: px(30), borderRadius: px(15), backgroundColor: '#2FBF5B', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#fff', fontSize: px(18), lineHeight: px(22), fontFamily: typography.fontFamily.medium }}>✓</Text>
+                    </View>
+                  </View>
+                ) : null}
               </View>
             );
           })}
 
           <Pressable
-            onPress={onCollect}
+            onPress={collect}
             style={[
               styles.collect,
               {
-                left: px((inner.width - collect.width) / 2),
-                top: px(collect.y),
-                width: px(collect.width),
-                height: px(collect.height),
-                borderRadius: px(collect.radius),
+                left: px((inner.width - box.width) / 2),
+                top: px(box.y),
+                width: px(box.width),
+                height: px(box.height),
+                borderRadius: px(box.radius),
+                opacity: claimed && !won ? 0.6 : 1,
               },
             ]}
           >
-            <Text
-              style={[styles.collectLabel, { fontSize: px(collect.size), lineHeight: px(collect.lineHeight) }]}
-            >
-              Collect
+            <Text style={[styles.collectLabel, { fontSize: px(box.size), lineHeight: px(box.lineHeight) }]}>
+              {won ? 'Collected!' : claimed ? 'Come back tomorrow' : busy ? '...' : 'Collect'}
             </Text>
           </Pressable>
+
+          <View style={{ position: 'absolute', left: px(inner.width / 2), top: px(box.y + box.height / 2) }}>
+            <CoinBurst run={burst} size={px(22)} />
+          </View>
+          {won ? (
+            <Animated.View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: px(box.y - 54),
+                alignItems: 'center',
+                opacity: pop,
+                transform: [
+                  { scale: pop.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) },
+                  { translateY: pop.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) },
+                ],
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(6), paddingHorizontal: px(16), paddingVertical: px(6), borderRadius: px(20), backgroundColor: colors.rewardOrange }}>
+                <Image source={art.coin} style={{ width: px(20), height: px(20) }} />
+                <Text style={{ fontFamily: typography.fontFamily.medium, fontSize: px(18), color: colors.white }}>
+                  +{won.reward_value} {unitOf(won.reward_type)}
+                </Text>
+              </View>
+            </Animated.View>
+          ) : null}
         </View>
 
         {/* Group 1597881077 — the winged ribbon crowning the card, title on it. */}
@@ -257,6 +337,14 @@ const styles = StyleSheet.create({
   },
   today: {
     backgroundColor: colors.rewardToday,
+    borderColor: colors.rewardOrange,
+    borderWidth: 2,
+  },
+  dayText: {
+    position: 'absolute',
+    zIndex: 2,
+    fontFamily: typography.fontFamily.medium,
+    color: '#B07A2A',
   },
   band: {
     position: 'absolute',

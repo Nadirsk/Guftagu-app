@@ -75,8 +75,21 @@ export type Arrival = {
   } | null;
 };
 
+/** One `gift.sent` frame off the room channel, for the on-screen effects. */
+export type GiftHit = {
+  id: string;
+  batch: string | null;
+  sender: RoomUser | null;
+  receiver: RoomUser | null;
+  gift: { code: string; thumbnail_url: string | null };
+  quantity: number;
+  coin_value: number;
+  /** Drawn on the sender's own screen at the tap, before the server has answered. */
+  local?: boolean;
+};
+
 export type CasualKind = 'dice' | 'mora' | 'machine';
-export type Casual = { id: string; user: RoomUser | null; type: CasualKind; result: number[] };
+export type Casual = { id: string; user: RoomUser | null; type: CasualKind | 'emoji'; result: number[] };
 
 export type Entrance = { id: string; user: RoomUser | null; arrival: Arrival };
 
@@ -128,6 +141,7 @@ export function useRoom(uuid: string) {
   /** Arrivals waiting their turn on the banner — shown one at a time. */
   const [entrances, setEntrances] = useState<Entrance[]>([]);
   const [casuals, setCasuals] = useState<Casual[]>([]);
+  const [giftFeed, setGiftFeed] = useState<GiftHit[]>([]);
 
   const path = `/rooms/${uuid}`;
 
@@ -156,6 +170,7 @@ export function useRoom(uuid: string) {
     }
   }, [path, token]);
 
+  const refreshGiftsRef = useRef<() => void>(() => undefined);
   const refreshGifts = useCallback(async () => {
     try {
       const rows = await api<GiftEvent[]>(`${path}/gifts`, { token });
@@ -262,7 +277,13 @@ export function useRoom(uuid: string) {
       addEntryLine(e.user, arrival);
       setEntrances((q) => [...q, { id: `${e.user.uuid}-${Date.now()}`, user: e.user, arrival }]);
     });
-    channel.listen('.casual.played', (e: { user: RoomUser; type: CasualKind; result: number[] }) => {
+    channel.listen('.gift.sent', (e: { transaction_id: number; sender: RoomUser; receiver: RoomUser; gift: { code: string; thumbnail_url: string | null }; quantity: number; batch: string | null; coin_value: number }) => {
+      refreshGiftsRef.current();
+      // The sender already saw their own send the moment they tapped.
+      if (e.sender?.uuid === meRef.current) return;
+      setGiftFeed((f) => [...f.slice(-30), { id: `${e.transaction_id}`, batch: e.batch, sender: e.sender, receiver: e.receiver, gift: e.gift, quantity: e.quantity, coin_value: e.coin_value }]);
+    });
+    channel.listen('.casual.played', (e: { user: RoomUser; type: CasualKind | 'emoji'; result: number[] }) => {
       const id = `${e.user.uuid}-${Date.now()}`;
       // One active roll per player: a new one replaces theirs.
       setCasuals((q) => [...q.filter((c) => c.user?.uuid !== e.user.uuid), { id, user: e.user, type: e.type, result: e.result }]);
@@ -283,6 +304,7 @@ export function useRoom(uuid: string) {
 
   /** The banner that just finished (or was dismissed) leaves the queue. */
   const dismissCasual = useCallback((id: string) => setCasuals((q) => q.filter((c) => c.id !== id)), []);
+  const playEmoji = useCallback((id: number) => api(`${path}/emoji`, { method: 'POST', body: { id }, token }), [path, token]);
   const playCasual = useCallback((type: CasualKind) => api(`${path}/casual`, { method: 'POST', body: { type }, token }), [path, token]);
 
   const nextEntrance = useCallback(() => setEntrances((q) => q.slice(1)), []);
@@ -299,25 +321,37 @@ export function useRoom(uuid: string) {
 
   const sendMessage = useCallback(
     async (body: string) => {
-      const sent = await api<{ uuid: string; body: string; created_at: string | null }>(`${path}/messages`, {
-        method: 'POST',
-        body: { body },
-        token,
-      });
-      setMessages((prev) => [
-        ...prev,
-        {
-          ...sent,
-          user: user ? { uuid: user.uuid, display_name: user.display_name ?? null, avatar_url: user.avatar_url ?? null } : null,
-        },
-      ]);
+      const author = user ? { uuid: user.uuid, display_name: user.display_name ?? null, avatar_url: user.avatar_url ?? null } : null;
+      // Show it at the tap; the server's copy replaces it when it answers.
+      const tempId = `sending-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      setMessages((prev) => [...prev, { uuid: tempId, body, user: author, created_at: new Date().toISOString() }]);
+      try {
+        const sent = await api<{ uuid: string; body: string; created_at: string | null }>(`${path}/messages`, {
+          method: 'POST',
+          body: { body },
+          token,
+        });
+        setMessages((prev) => {
+          const rest = prev.filter((m) => m.uuid !== tempId);
+          // A poll may already have brought the real row in.
+          return rest.some((m) => m.uuid === sent.uuid) ? rest : [...rest, { ...sent, user: author }];
+        });
+      } catch (e) {
+        setMessages((prev) => prev.filter((m) => m.uuid !== tempId));
+        throw e;
+      }
     },
     [path, token, user],
   );
 
+  refreshGiftsRef.current = refreshGifts;
+  const meRef = useRef<string | undefined>(undefined);
+  meRef.current = user?.uuid;
+  const pushGift = useCallback((hits: GiftHit[]) => setGiftFeed((f) => [...f.slice(-30), ...hits]), []);
+
   const sendGift = useCallback(
     async (giftId: number, toUser: string, quantity: number) => {
-      const res = await api<{ coin_balance: number; receiver: RoomUser }>(`${path}/gifts`, {
+      const res = await api<{ coin_balance: number; receiver: RoomUser | null }>(`${path}/gifts`, {
         method: 'POST',
         body: { gift_id: giftId, to_user: toUser, quantity },
         token,
@@ -344,7 +378,10 @@ export function useRoom(uuid: string) {
     entrance: entrances[0] ?? null,
     nextEntrance,
     casuals,
+    giftFeed,
+    pushGift,
     dismissCasual,
+    playEmoji,
     playCasual,
     me: user,
     takeSeat: (seat: number) => act(`/seats/${seat}/take`, 'POST'),

@@ -281,14 +281,14 @@ export const KICKOUT_CHOICES = [
  * these are measured off that render: 403 tall, flush to the bottom.
  */
 export const GIFTS = {
-  height: 403,
-  tabs: { x: 14, y: 14, gap: 8, size: 17, underline: { width: 14, height: 3, gap: 6 } },
-  grid: { x: 16, y: 66, cardWidth: 92, cardHeight: 124, colGap: 1.33, rowGap: 6, columns: 4, rows: 2 },
-  thumb: { size: 66, top: 6 },
-  price: { top: 78, size: 12, coin: 14 },
-  name: { top: 98, size: 12 },
-  dots: { y: 338, size: 6, gap: 10 },
-  bar: { height: 55, pill: { x: 16, height: 34, radius: 17 }, send: { width: 56 }, qty: { width: 114 } },
+  height: 426,
+  faces: { x: 12, y: 16, size: 33, gap: 7.6, allSize: 37, allRight: 12, allWidth: 66 },
+  tabs: { x: 14, y: 70, gap: 12, size: 16, underline: { width: 16, height: 3.5, gap: 4 } },
+  grid: { y: 114, cardHeight: 110 },
+  thumb: { size: 56, top: 9 },
+  price: { top: 72, size: 11, coin: 10 },
+  name: { top: 90, size: 11.5 },
+  bar: { height: 52, pill: { x: 14, height: 31, radius: 16 }, send: { width: 56 }, qty: { width: 112 } },
 } as const;
 
 /** 613:6542 — Music, a white sheet at y 422 over a dark scrim. */
@@ -318,3 +318,125 @@ export const SHARE = {
 
 /** room-games' "More" sheet (613:4733): 644 tall from y 209, the games as one image. */
 export const GAMES = { y: 209, height: 644, radius: 10 } as const;
+
+/**
+ * Red envelopes — section 575:2742 of E20HaZSfa6z2BNDlbutRuL. The send sheet
+ * (575:3216) and its Rules panel (575:3417) sit on the bottom edge; the Open
+ * (575:3103) and claimed (575:2972) popups are centred over a 38% black scrim
+ * (Rectangle 161124110, measured off the frames). Children are sheet- or
+ * popup-relative.
+ */
+export const ENVELOPE = {
+  sheet: {
+    y: 372,
+    height: 502,
+    radius: { left: 24, right: 14 },
+    /** image 205660, bottom-anchored. */
+    bg: { x: -12, y: -5, width: 415, height: 699 },
+    help: { x: 22.68, y: 23.68, size: 33.639 },
+    close: { x: 329, y: 20, size: 53, cross: { centerX: 354.7, centerY: 50, width: 34.5833, height: 34.3608, rotate: '-48.03deg' } },
+    /** voiceroom_baloot_btn_start — cropped 9.42% down, 100.56% tall. */
+    title: { x: 103, y: 22, width: 197, height: 67, imageTop: 6.31, imageHeight: 67.37, centerX: 202, centerY: 53.5, size: 14 },
+    gold: { label: { centerX: 49.5, centerY: 136.5 } },
+    numbers: { label: { centerX: 65, centerY: 287.5 } },
+    labelSize: 18,
+    chip: { height: 37, radius: 41, size: 14, idle: '#C0976D', dim: 'rgba(0,0,0,0.17)', selectedText: '#F50000' },
+    send: { x: 6, y: 424, width: 389, height: 52, radius: 53, size: 20, color: '#FF8233' },
+  },
+  /** Gold amounts and envelope counts as Figma lays them out; `input` is the Enter Number pill. */
+  goldChips: [
+    { value: 1000, x: 23, y: 162, width: 107 },
+    { value: 2000, x: 142, y: 162, width: 107 },
+    { value: 5000, x: 261, y: 162, width: 107 },
+    { value: 10000, x: 23, y: 211, width: 107 },
+    // Figma fills this one with the darker wash rather than the tan.
+    { value: 20000, x: 142, y: 211, width: 107, dim: true },
+  ],
+  goldInput: { x: 261, y: 211, width: 125, size: 11, color: 'rgba(255,255,255,0.64)', dim: true },
+  countChips: [
+    { value: 5, x: 23, y: 308, width: 60 },
+    { value: 10, x: 95, y: 308, width: 60 },
+    { value: 20, x: 167, y: 308, width: 60 },
+    { value: 30, x: 239, y: 308, width: 60 },
+    { value: 40, x: 311, y: 308, width: 60 },
+    { value: 50, x: 23, y: 357, width: 60 },
+  ],
+  countInput: { x: 95, y: 355, width: 140, size: 12, color: 'rgba(255,255,255,0.57)', dim: false },
+  rules: {
+    y: 459,
+    radius: 20,
+    title: { centerY: 40.5, size: 19 },
+    body: { x: 21, y: 88, width: 345, size: 12, color: 'rgba(0,0,0,0.63)' },
+  },
+  /** Frame 1597881247 — the envelope left in the room, over the chat. */
+  tile: { x: 20, y: 643, width: 108, height: 126, radius: 8, flap: { x: 0, y: -50, width: 108, height: 113 }, coin: { x: 36, y: 39, size: 37 } },
+  scrim: 'rgba(0,0,0,0.38)',
+  popup: { x: 25, y: 230, width: 352, height: 470, radius: 12 },
+  open: {
+    border: { width: 4, color: '#FFDE07' },
+    bg: { x: -7, y: -13, width: 355, height: 487 },
+    avatar: { y: 103, size: 108 },
+    name: { centerX: 170.5, centerY: 239.5, size: 19 },
+    ring: { y: 294, size: 122 },
+    disc: { y: 307, size: 96 },
+    label: { centerX: 172, centerY: 354.5, size: 19 },
+  },
+  claimed: {
+    /** image 205660 in a 165-radius pill, bottom-anchored, mostly above the popup. */
+    bg: { x: -6, y: -182, width: 358, height: 330, radius: 165 },
+    avatar: { x: 122, y: 82, size: 108 },
+    name: { centerX: 175, centerY: 208, size: 16 },
+    amount: { centerX: 176, y: 224, size: 35, unitSize: 17, color: '#FF0000' },
+    credited: { y: 279, size: 13 },
+    summary: { x: 18, centerY: 345, size: 13 },
+    row: {
+      avatar: { x: 18, y: 378, width: 45, height: 49 },
+      name: { x: 67, y: 384, size: 13 },
+      date: { x: 67, y: 403, width: 89, size: 11 },
+      amount: { centerX: 294, centerY: 403, size: 16, color: '#FF8B25' },
+      step: 62,
+    },
+  },
+} as const;
+
+/**
+ * Lucky Wheel — section 575:3421 of jSVcqffHYaDdy28xSFVaIw. Frame 1894
+ * (575:3598) is the sheet, 656 tall on the bottom edge; Frame 1908 (575:3818)
+ * is Roulette Records over a 53% scrim that covers the sheet only. Children are
+ * sheet-relative. `crop` is Figma's image-in-box placement, in percent.
+ */
+export const WHEEL = {
+  height: 656,
+  radius: 13,
+  stage: { x: 0, y: -23, width: 402, height: 723 },
+  title: { centerX: 201, y: 19, size: 19 },
+  tabs: [
+    { key: 'classic', label: 'Classic', x: 78, labelX: 113 },
+    { key: 'glory', label: 'Glory', x: 209, labelX: 250 },
+  ],
+  tab: { y: 71, width: 111.364, height: 35, labelY: 80, size: 12 },
+  record: { box: { x: 311, y: 119, w: 111, h: 38 }, crop: { w: 109.94, h: 197.16, l: -4.29, t: -46.02 }, labelX: 347, labelY: 129, size: 12 },
+  pedestal: { box: { x: 65, y: 423, w: 272, h: 127 }, crop: { w: 112.5, h: 256.55, l: -6.87, t: -133.61 } },
+  wheel: { box: { x: 43, y: 138, w: 315, h: 339 }, crop: { w: 114.75, h: 159.9, l: -5.02, t: -21.51 } },
+  coins: { box: { x: 0, y: 560, w: 402, h: 124 }, crop: { w: 100, h: 299.56, l: 0, t: -199.56 } },
+  /** Figma stacks the button bitmap three times, which is what makes it that solid. */
+  spins: [
+    { times: 1, coins: 99, box: { x: 13, y: 474, w: 188, h: 61 }, centerX: 106.5 },
+    { times: 10, coins: 990, box: { x: 209, y: 474, w: 188, h: 61 }, centerX: 305 },
+  ],
+  spinCrop: { w: 130.19, h: 248.27, l: -15.09, t: -59.71 },
+  spinLabel: { y: 479, size: 11 },
+  recharge: { box: { x: 84, y: 547, w: 235, h: 75 }, crop: { w: 104.55, h: 325.66, l: -1.85, t: -98.23 }, centerY: 583, size: 16 },
+  records: {
+    scrim: 'rgba(0,0,0,0.53)',
+    /** Frame 1901, centred; its children are relative to it. */
+    x: 55,
+    y: 86,
+    width: 289,
+    panel: { x: -21, y: -21, w: 331, h: 431 },
+    empty: { centerX: 144.5, y: 299, size: 18 },
+    title: { box: { x: 59, y: -44, w: 171, h: 59 }, labelY: -23, size: 12 },
+    logo: { x: 85, y: 143, size: 119 },
+    close: { x: 119, y: 415, size: 52, icon: { inset: 13, size: 27 } },
+  },
+} as const;

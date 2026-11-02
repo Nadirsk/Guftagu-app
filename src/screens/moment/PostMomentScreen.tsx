@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import { ArrowLeft, ChevronDown, ChevronRight, Play, Send, X } from 'lucide-react-native';
+import { ArrowLeft, ChevronDown, Play, Send, X } from 'lucide-react-native';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -83,7 +83,6 @@ const D = {
     box: { height: 50, radius: 7, textX: 21, textY: 13, size: 16, height_: 23 }, // node 99:1446
     chevron: { x: 327, y: 13, size: 24 }, // node 99:1450
   },
-  topics: { height: 30, labelSize: 16, labelHeight: 23, chevron: 24 }, // node 99:1464
 } as const;
 
 /**
@@ -229,7 +228,7 @@ export default function PostMomentScreen() {
     }
   };
 
-  const { column, field, dropzone, audience, topics, counter } = D;
+  const { column, field, dropzone, audience, counter } = D;
   const { inset, gap, columns, border } = dropzone.grid;
   // Three across, inside the dashed edge, sharing the gaps between them.
   const tileSize =
@@ -248,7 +247,8 @@ export default function PostMomentScreen() {
   const dropzoneTop = field.height + counter.gap + counter.height + 16;
   const audienceTop = dropzoneTop + dropzoneHeight + column.gap;
   const audienceHeight = audience.labelHeight + audience.gap + audience.box.height;
-  const topicsTop = audienceTop + audienceHeight + column.gap;
+  // Figma's "Add Topics" row (99:1464) is left out, so the column ends at the audience box.
+  const columnEnd = audienceTop + audienceHeight;
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, 16);
   const headerY = topInset + 8;
@@ -260,9 +260,9 @@ export default function PostMomentScreen() {
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ height: px(column.y + topicsTop + topics.height + 40 - topShift) }}
+        contentContainerStyle={{ height: px(column.y + columnEnd + 40 - topShift) }}
       >
-        <View style={{ position: 'relative', top: -px(topShift), height: px(column.y + topicsTop + topics.height + 40) }}>
+        <View style={{ position: 'relative', top: -px(topShift), height: px(column.y + columnEnd + 40) }}>
           {/* Node 99:1359 */}
           <Pressable
             onPress={() => navigation.goBack()}
@@ -519,38 +519,13 @@ export default function PostMomentScreen() {
           </View>
         </Pressable>
 
-        {/* Node 99:1464 — Figma gives the chevron no destination yet, so the row
-            is drawn but inert. */}
-        <View
-          style={[
-            styles.topics,
-            {
-              left: px(column.x),
-              top: px(column.y + topicsTop),
-              width: px(column.width),
-              height: px(topics.height),
-            },
-          ]}
-        >
-          <Text
-            numberOfLines={1}
-            style={[
-              styles.rowLabel,
-              { fontSize: px(topics.labelSize), lineHeight: px(topics.labelHeight) },
-            ]}
-          >
-            Add Topics
-          </Text>
-          <ChevronRight size={px(topics.chevron)} color={colors.black} />
-        </View>
-
         {error ? (
           <Text
             style={[
               styles.error,
               {
                 left: px(column.x),
-                top: px(column.y + topicsTop + topics.height + 12),
+                top: px(column.y + columnEnd + 12),
                 width: px(column.width),
                 fontSize: px(14),
               },
@@ -683,10 +658,6 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.medium,
     color: colors.black,
   },
-  rowLabel: {
-    fontFamily: typography.fontFamily.medium,
-    color: colors.black,
-  },
   audience: {
     position: 'absolute',
     overflow: 'hidden',
@@ -697,12 +668,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     fontFamily: typography.fontFamily.medium,
     color: colors.black,
-  },
-  topics: {
-    position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
   error: {
     position: 'absolute',

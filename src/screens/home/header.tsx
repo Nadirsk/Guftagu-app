@@ -1,7 +1,10 @@
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
 import * as icons from '../../assets/home/icons';
+import type { RootStackParamList } from '../../navigation/types';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
 import { BANNER_LEFT, BANNER_RIGHT, BANNER_WIDE, TrioBanner } from './banners';
@@ -33,6 +36,7 @@ const SAMPLE = { unread: 2, online: 2344, matching: 6, avatarName: 'aSIF' };
 
 export function HomeHeader() {
   const { px } = useDesignScale();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { background, title, avatar, bell, activeNow } = HEADER;
 
   return (
@@ -157,8 +161,8 @@ export function HomeHeader() {
         </Text>
       </View>
 
-      <TrioBanner spec={BANNER_LEFT} />
-      <TrioBanner spec={BANNER_RIGHT} />
+      <TrioBanner spec={BANNER_LEFT} onPress={() => navigation.navigate('Ranking')} />
+      <TrioBanner spec={BANNER_RIGHT} onPress={() => navigation.navigate('WeeklyStar')} />
       <TrioBanner spec={BANNER_WIDE} />
     </>
   );

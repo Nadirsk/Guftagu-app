@@ -29,45 +29,43 @@ import { colors, typography } from '../../theme/tokens';
  * The frame is 392 wide, not the 402 the rest of the app is drawn on, so this
  * screen scales by its own width. Every number below is that frame's. Figma sets
  * the labels in Mona Sans / Delight; Poppins stands in a size smaller, as it
- * runs wider. Figma marks nothing as selected; a chosen tag, Mic Mode or
+ * runs wider. Figma marks nothing as selected; a chosen Mic Mode or
  * background takes the Start button's #DE4200.
  */
 const W = 392;
 const ACCENT = '#DE4200';
 /** Frame 1597881214 and the Mic Mode cards. */
 const FIELD_BORDER = 'rgba(0,0,0,0.29)';
-/** The Room Tag pills. */
-const TAG_BORDER = 'rgba(0,0,0,0.2)';
 const PLACEHOLDER = 'rgba(0,0,0,0.34)';
 
-/** Room Tag — "All" files the room under no tag; the rest are category keys. */
-const TAGS: { label: string; key: string | null; x: number; w: number; row: number }[] = [
-  { label: 'All', key: null, x: 0, w: 62, row: 0 },
-  { label: 'Chat', key: 'chat', x: 73, w: 77, row: 0 },
-  { label: 'Birthday', key: 'birthday', x: 161, w: 110, row: 0 },
-  { label: 'Party', key: 'party', x: 282, w: 86, row: 0 },
-  { label: 'Singing', key: 'singing', x: 0, w: 93, row: 1 },
-  { label: 'Game', key: 'game', x: 98, w: 81, row: 1 },
-  { label: 'Friend', key: 'friend', x: 184, w: 93, row: 1 },
-  { label: 'Emotion', key: 'emotion', x: 282, w: 96, row: 1 },
-  { label: 'Football', key: 'football', x: 0, w: 100, row: 2 },
-  { label: 'DJ', key: 'dj', x: 105, w: 59, row: 2 },
-];
+/** Room Tag was Figma's 625–811 block; Mic Mode (840) now sits where its label was (625). */
+const TAG_BLOCK = 215;
+/** The password field (1275) up to Room Background (1353): the room it frees while the switch is off. */
+const PASSWORD_BLOCK = 78;
 
 /**
- * The four Mic Mode cards. `rows` is each preview row's seat count, `seat` the
- * preview seat's size and `step` the distance between neighbours, all from
- * Frames 1597881427 / 28 / 32 / 33.
+ * Mic Mode — one card per seat template the admin panel defines (`/room-seat-templates`),
+ * two to a row at Figma's card positions (Frames 1597881427 / 28 / 32 / 33: x 16 and 188, 8 apart,
+ * first row at 870). Figma draws four fixed cards; the number of seats in each preview and its
+ * size follow the same steps, picked by how many seats the template has.
  */
-const MIC_MODES = [
-  { seats: 2, x: 16, y: 870, w: 165, h: 129, label: { y: 12 }, grid: { x: 38, y: 52 }, rows: [2], seat: 41, step: 47, rowStep: 0 },
-  { seats: 12, x: 188, y: 870, w: 180, h: 129, label: { y: 15 }, grid: { x: 23, y: 47 }, rows: [4, 4], seat: 29, step: 35, rowStep: 38 },
-  { seats: 20, x: 16, y: 1007, w: 165, h: 201, label: { y: 15 }, grid: { x: 15, y: 43 }, rows: [4, 4, 4, 3], seat: 29, step: 35, rowStep: 36 },
-  { seats: 40, x: 188, y: 1007, w: 180, h: 201, label: { y: 18 }, grid: { x: 22, y: 51 }, rows: [6, 6, 6, 6, 6], seat: 20, step: 23, rowStep: 24 },
-] as const;
+const MIC_TOP = 870;
+const MIC_GAP = 8;
+const MIC_COLUMNS = [{ x: 16, w: 165 }, { x: 188, w: 180 }] as const;
+/** Where Figma's last card ends (1007 + 201): everything below the Mic Mode block hangs off it. */
+const MIC_FIGMA_END = 1208;
+const MIC_EMPTY_HEIGHT = 30;
 
+/** The preview grid for a template: columns, seat size, spacing, and the card height that fits it. */
+function micPreview(total: number) {
+  const [cols, seat, step, rowStep, gridY] = total <= 4 ? [total, 41, 47, 47, 52] : total <= 12 ? [4, 29, 35, 38, 47] : total <= 20 ? [4, 29, 35, 36, 43] : [6, 20, 23, 24, 51];
+  const rows = Math.ceil(total / cols);
+  const height = Math.max(129, gridY + (rows - 1) * rowStep + seat + 24);
+  return { cols, seat, step, rowStep, gridY, rows, height };
+}
+
+type Template = { id: number; name: string; total_seats: number; vip_positions: number[] };
 type Theme = { id: number; name: string; background_url: string | null; preview_url: string | null; is_premium: boolean };
-type Category = { id: number; key: string };
 type Picked = { uri: string; mime: string };
 
 export default function CreateRoomScreen() {
@@ -79,13 +77,11 @@ export default function CreateRoomScreen() {
   const [cover, setCover] = useState<Picked | null>(null);
   const [title, setTitle] = useState('');
   const [announcement, setAnnouncement] = useState('');
-  /** Nothing is picked until tapped, as Figma draws it; `null` is the "All" pill. */
-  const [tag, setTag] = useState<string | null | undefined>(undefined);
-  const [seats, setSeats] = useState<number | null>(null);
+  const [templates, setTemplates] = useState<Template[] | null>(null);
+  const [templateId, setTemplateId] = useState<number | null>(null);
   const [locked, setLocked] = useState(false);
   const [password, setPassword] = useState('');
   const [themes, setThemes] = useState<Theme[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   /** A theme id, or 'own' for the picture picked from the "+" tile. */
   const [background, setBackground] = useState<number | 'own' | null>(null);
   const [ownBackground, setOwnBackground] = useState<Picked | null>(null);
@@ -94,8 +90,24 @@ export default function CreateRoomScreen() {
 
   useEffect(() => {
     api<Theme[]>('/room-themes', { token }).then(setThemes).catch(() => undefined);
-    api<Category[]>('/room-categories', { token }).then(setCategories).catch(() => undefined);
+    api<Template[]>('/room-seat-templates', { token }).then(setTemplates).catch(() => setTemplates([]));
   }, [token]);
+
+  // Two cards to a row; a row is as tall as its taller card.
+  const micRows = (() => {
+    const rows: { y: number; height: number; cards: { t: Template; col: number; p: ReturnType<typeof micPreview> }[] }[] = [];
+    let y = MIC_TOP;
+    for (let i = 0; i < (templates?.length ?? 0); i += 2) {
+      const cards = (templates ?? []).slice(i, i + 2).map((t, col) => ({ t, col, p: micPreview(t.total_seats) }));
+      const height = Math.max(...cards.map((c) => c.p.height));
+      rows.push({ y, height, cards });
+      y += height + MIC_GAP;
+    }
+    return rows;
+  })();
+  const micEnd = micRows.length ? micRows[micRows.length - 1].y + micRows[micRows.length - 1].height : MIC_TOP + MIC_EMPTY_HEIGHT;
+  /** How far the Password and Background blocks move from Figma's spot, since the Mic Mode block is as tall as the admin's templates need. */
+  const micDelta = micEnd - MIC_FIGMA_END;
 
   const pick = async (): Promise<Picked | null> => {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
@@ -112,7 +124,8 @@ export default function CreateRoomScreen() {
   const start = async () => {
     setError(null);
     if (!title.trim()) return setError('Give the room a title.');
-    if (seats === null) return setError('Choose a Mic Mode.');
+    // With no templates to pick from, the server opens the room with its default seats.
+    if (templateId === null && templates?.length) return setError('Choose a Mic Mode.');
     if (locked && (password.length < 4 || password.length > 8)) return setError('The password needs 4 to 8 characters.');
 
     setBusy(true);
@@ -127,8 +140,7 @@ export default function CreateRoomScreen() {
           name: title.trim(),
           announcement: announcement.trim() || null,
           cover_url: coverUrl,
-          category_id: tag ? categories.find((c) => c.key === tag)?.id ?? null : null,
-          seat_count: seats,
+          seat_template_id: templateId,
           visibility: locked ? 'private' : 'public',
           password: locked ? password : null,
           theme_id: typeof background === 'number' ? background : null,
@@ -163,7 +175,7 @@ export default function CreateRoomScreen() {
   return (
     <View style={styles.screen}>
       <StatusBar style="dark" />
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ height: s(1626) }} showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ height: s(1626 - TAG_BLOCK - (locked ? 0 : PASSWORD_BLOCK) + micDelta) }} showsVerticalScrollIndicator={false}>
         {/* Frame 1597881208 — back and the title. */}
         <Pressable onPress={() => navigation.goBack()} hitSlop={s(10)} style={{ position: 'absolute', left: s(16), top: s(83) }}>
           <ArrowLeft size={s(24)} color="#1D1B20" strokeWidth={2} />
@@ -207,47 +219,55 @@ export default function CreateRoomScreen() {
         {label('Room Announcement', 16, 521)}
         {field(550, announcement, setAnnouncement, 'Enter announcement', 13)}
 
-        {/* Room Tag — Frame 1597881340, three rows 54 apart. */}
-        {label('Room Tag', 16, 625)}
-        {TAGS.map((t) => {
-          const on = tag === t.key;
-          return (
-            <Pressable
-              key={t.label}
-              onPress={() => setTag(t.key)}
-              style={{ position: 'absolute', left: s(16 + t.x), top: s(661 + t.row * 54), width: s(t.w), height: s(42), borderRadius: s(26), borderWidth: 1, borderColor: on ? ACCENT : TAG_BORDER, backgroundColor: on ? ACCENT : 'transparent', justifyContent: 'center', paddingLeft: s(19) }}
-            >
-              <Text numberOfLines={1} style={[styles.medium, { fontSize: s(15), color: on ? colors.white : colors.black }]}>{t.label}</Text>
-            </Pressable>
-          );
-        })}
-
+        {/* Everything below the announcement keeps Figma's coordinates, lifted by the Room Tag block that is no longer here. */}
+        <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: -s(TAG_BLOCK), width, height: s(1626) }}>
         {/* Mic Mode — how many seats the room opens with. */}
         {label('Mic Mode', 16, 840)}
-        {MIC_MODES.map((m) => {
-          const on = seats === m.seats;
-          const glyph = m.seat * 0.643;
-          return (
-            <Pressable
-              key={m.seats}
-              onPress={() => setSeats(m.seats)}
-              style={{ position: 'absolute', left: s(m.x), top: s(m.y), width: s(m.w), height: s(m.h), borderRadius: s(7), borderWidth: on ? 2 : 1, borderColor: on ? ACCENT : FIELD_BORDER }}
-            >
-              <Text style={[styles.medium, { position: 'absolute', left: 0, right: 0, top: s(m.label.y), textAlign: 'center', fontSize: s(14), color: colors.black }]}>{`${m.seats} Mic`}</Text>
-              {m.rows.map((count, r) =>
-                Array.from({ length: count }, (_, i) => (
-                  <View
-                    key={`${r}-${i}`}
-                    style={[styles.center, { position: 'absolute', left: s(m.grid.x + i * m.step), top: s(m.grid.y + r * m.rowStep), width: s(m.seat), height: s(m.seat), borderRadius: s(m.seat / 2), backgroundColor: '#4D2242' }]}
-                  >
-                    <SvgXml xml={icons.seat} color="#FFC3DD" width={s(glyph * 0.9)} height={s(glyph)} />
-                  </View>
-                )),
-              )}
-            </Pressable>
-          );
-        })}
+        {templates === null ? (
+          <ActivityIndicator color={colors.black} style={{ position: 'absolute', left: s(16), top: s(MIC_TOP) }} />
+        ) : templates.length === 0 ? (
+          <Text style={[styles.regular, { position: 'absolute', left: s(16), top: s(MIC_TOP), fontSize: s(13), color: 'rgba(0,0,0,0.4)' }]}>No mic modes are set up yet.</Text>
+        ) : null}
+        {micRows.flatMap((row) =>
+          row.cards.map(({ t, col, p }) => {
+            const on = templateId === t.id;
+            const glyph = p.seat * 0.643;
+            const column = MIC_COLUMNS[col];
+            const gridX = (column.w - ((Math.min(p.cols, t.total_seats) - 1) * p.step + p.seat)) / 2;
+            return (
+              <Pressable
+                key={t.id}
+                onPress={() => setTemplateId(t.id)}
+                style={{ position: 'absolute', left: s(column.x), top: s(row.y), width: s(column.w), height: s(row.height), borderRadius: s(7), borderWidth: on ? 2 : 1, borderColor: on ? ACCENT : FIELD_BORDER }}
+              >
+                <Text style={[styles.medium, { position: 'absolute', left: 0, right: 0, top: s(12), textAlign: 'center', fontSize: s(14), color: colors.black }]}>{`${t.total_seats} Mic`}</Text>
+                {t.vip_positions.length ? (
+                  <Text style={[styles.regular, { position: 'absolute', left: 0, right: 0, top: s(29), textAlign: 'center', fontSize: s(10), color: 'rgba(0,0,0,0.4)' }]}>{`${t.vip_positions.length} VIP`}</Text>
+                ) : null}
+                {Array.from({ length: t.total_seats }, (_, n) => {
+                  const spot = { position: 'absolute', left: s(gridX + (n % p.cols) * p.step), top: s(p.gridY + Math.floor(n / p.cols) * p.rowStep), width: s(p.seat), height: s(p.seat) } as const;
+                  // The same gold glass disc and ring the room draws on an empty VIP seat; `vip_positions` are 1-based seat numbers.
+                  if (t.vip_positions.includes(n + 1)) {
+                    return (
+                      <View key={n} style={[styles.center, spot]}>
+                        <Image source={require('../../assets/room/mz/seat-empty.png')} style={{ position: 'absolute', width: s(p.seat), height: s(p.seat), tintColor: '#F2C14E' }} />
+                        <Image source={require('../../assets/room/mz/vip-ring-10.png')} style={{ position: 'absolute', width: s(p.seat * 1.04), height: s(p.seat * 1.04) }} />
+                      </View>
+                    );
+                  }
+                  return (
+                    <View key={n} style={[styles.center, spot, { borderRadius: s(p.seat / 2), backgroundColor: '#4D2242' }]}>
+                      <SvgXml xml={icons.seat} color="#FFC3DD" width={s(glyph * 0.9)} height={s(glyph)} />
+                    </View>
+                  );
+                })}
+              </Pressable>
+            );
+          }),
+        )}
 
+        {/* Password and Background keep Figma's coordinates, moved by however tall the Mic Mode block came out. */}
+        <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: s(micDelta), width, height: s(1626) }}>
         {/* Room Password — Frame 1597881426 and its 3D Switch. */}
         {label('Room Password', 12, 1242)}
         <Pressable
@@ -257,11 +277,13 @@ export default function CreateRoomScreen() {
         >
           <View style={{ position: 'absolute', left: s(locked ? 25 : 3), top: s(3), width: s(21), height: s(21), borderRadius: s(10.5), backgroundColor: '#F4F5F5', shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: s(3), shadowOffset: { width: s(1), height: s(1) }, elevation: 2 }} />
         </Pressable>
-        <View style={{ position: 'absolute', left: s(12), top: s(1275), width: s(369), height: s(47), borderRadius: s(10), borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', flexDirection: 'row', alignItems: 'center', paddingLeft: s(17), paddingRight: s(16), opacity: locked ? 1 : 0.5 }}>
+        {/* The field only exists while the switch is on. */}
+        {locked ? (
+        <View style={{ position: 'absolute', left: s(12), top: s(1275), width: s(369), height: s(47), borderRadius: s(10), borderWidth: 1, borderColor: 'rgba(0,0,0,0.12)', flexDirection: 'row', alignItems: 'center', paddingLeft: s(17), paddingRight: s(16) }}>
           <TextInput
             value={password}
             onChangeText={(t) => setPassword(t.slice(0, 8))}
-            editable={locked}
+            autoFocus
             secureTextEntry
             maxLength={8}
             placeholder="Enter your room password"
@@ -270,8 +292,10 @@ export default function CreateRoomScreen() {
           />
           <Text style={[styles.regular, { fontSize: s(13), color: 'rgba(0,0,0,0.35)' }]}>{`${password.length}/8`}</Text>
         </View>
+        ) : null}
 
-        {/* Room Background — the "+" upload, then the themes the backend offers. */}
+        {/* Room Background — the "+" upload, then the themes the backend offers. Rides up into the space the field leaves. */}
+        <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: locked ? 0 : -s(PASSWORD_BLOCK), width, height: s(1626) }}>
         {label('Room Background', 17, 1353, 16)}
         <Text style={[styles.regular, { position: 'absolute', left: s(17), top: s(1381), fontSize: s(10), color: 'rgba(0,0,0,0.4)' }]}>
           Room Background VIP5/VIP6/VIP7/VIP 8 Room background for free
@@ -313,6 +337,9 @@ export default function CreateRoomScreen() {
               );
             })}
         </ScrollView>
+        </View>
+        </View>
+        </View>
       </ScrollView>
     </View>
   );

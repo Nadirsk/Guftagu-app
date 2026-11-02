@@ -2,6 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ArrowLeft } from 'lucide-react-native';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
@@ -74,6 +75,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'PhoneAuth'>
 
 export default function PhoneAuthScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const { t } = useTranslation();
   const { px } = useDesignScale();
   const { sendOtp, verifyOtp } = useAuth();
 
@@ -111,7 +113,7 @@ export default function PhoneAuthScreen() {
   async function requestCode() {
     if (busy) return;
     if (identifier.phone.length < 6) {
-      Alert.alert('Phone number required', 'Enter your phone number first.');
+      Alert.alert(t('phone.requiredTitle'), t('phone.requiredBody'));
       return;
     }
 
@@ -125,8 +127,8 @@ export default function PhoneAuthScreen() {
       resendIn.start(OTP_RESEND_COOLDOWN_SECONDS);
     } catch (error) {
       Alert.alert(
-        'Could not send the code',
-        error instanceof ApiError ? error.displayMessage : 'Something went wrong. Try again.',
+        t('common.couldNotSend'),
+        error instanceof ApiError ? error.displayMessage : t('common.somethingWrong'),
       );
     } finally {
       setPending(null);
@@ -140,7 +142,7 @@ export default function PhoneAuthScreen() {
 
     const otp = code.join('');
     if (otp.length !== D.otp.count) {
-      Alert.alert('Enter the code', `Type all ${D.otp.count} digits you received.`);
+      Alert.alert(t('common.enterCode'), t('phone.typeDigits', { count: D.otp.count }));
       return;
     }
 
@@ -149,8 +151,8 @@ export default function PhoneAuthScreen() {
       await verifyOtp(identifier, otp);
     } catch (error) {
       Alert.alert(
-        'Could not verify',
-        error instanceof ApiError ? error.displayMessage : 'Something went wrong. Try again.',
+        t('common.couldNotVerify'),
+        error instanceof ApiError ? error.displayMessage : t('common.somethingWrong'),
       );
     } finally {
       setPending(null);
@@ -160,10 +162,10 @@ export default function PhoneAuthScreen() {
   const resendWaiting = busy || resendIn.secondsLeft > 0;
   const resendLabel =
     pending === 'send'
-      ? 'Sending…'
+      ? t('common.sending')
       : resendIn.secondsLeft > 0
-        ? `Resend in ${resendIn.secondsLeft}s`
-        : 'Resend Code';
+        ? t('common.resendIn', { seconds: resendIn.secondsLeft })
+        : t('common.resendCode');
 
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, 16);
@@ -192,7 +194,7 @@ export default function PhoneAuthScreen() {
           },
         ]}
       >
-        Continue with Phone Number
+        {t('phone.heading')}
       </Text>
 
       <View
@@ -268,7 +270,7 @@ export default function PhoneAuthScreen() {
           }}
           onFocus={() => setPhoneFocused(true)}
           onBlur={() => setPhoneFocused(false)}
-          placeholder="Phone Number"
+          placeholder={t('phone.placeholder')}
           placeholderTextColor={colors.phonePlaceholder}
           keyboardType="phone-pad"
           style={[styles.phoneInput, { fontSize: px(D.phoneInput.fontSize) }]}
@@ -302,7 +304,7 @@ export default function PhoneAuthScreen() {
             />
           )}
           <Text style={[styles.getCodeLabel, { fontSize: px(D.getCode.fontSize) }]}>
-            {pending === 'send' ? 'Sending…' : 'Get code via WhatsApp'}
+            {pending === 'send' ? t('common.sending') : t('phone.getCode')}
           </Text>
         </Pressable>
       ) : (
@@ -376,18 +378,18 @@ export default function PhoneAuthScreen() {
         {pending === 'verify' ? (
           <ActivityIndicator color={colors.white} />
         ) : (
-          <Text style={[styles.submitLabel, { fontSize: px(D.submit.fontSize) }]}>Submit</Text>
+          <Text style={[styles.submitLabel, { fontSize: px(D.submit.fontSize) }]}>{t('common.submit')}</Text>
         )}
       </Pressable>
       </View>
 
       <SelectModal
         visible={countryModalVisible}
-        title="Select Country"
+        title={t('common.selectCountry')}
         options={COUNTRY_SELECT_OPTIONS}
         selectedValue={countryCode}
         searchable
-        searchPlaceholder="Search countries"
+        searchPlaceholder={t('common.searchCountries')}
         onSelect={(value) => {
           setCountryCode(value);
           if (codeRequested) setCodeRequested(false);

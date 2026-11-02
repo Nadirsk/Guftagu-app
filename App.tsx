@@ -14,6 +14,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider } from './src/auth/AuthContext';
 import RootNavigator from './src/navigation/RootNavigator';
+import { loadSavedLanguage } from './src/i18n';
 import { PostStateProvider } from './src/screens/moment/PostStateContext';
 
 SplashScreen.preventAutoHideAsync();
@@ -25,6 +26,10 @@ export default function App() {
     Poppins_600SemiBold,
     Poppins_700Bold,
   });
+
+  useEffect(() => {
+    loadSavedLanguage();
+  }, []);
 
   useEffect(() => {
     if (fontsLoaded || fontError) {

@@ -104,7 +104,18 @@ export const momentAddCircle = `<svg preserveAspectRatio="none" overflow="visibl
 </svg>
 `;
 
-export const momentBellCircle = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="41" height="41" viewBox="0 0 41 41" fill="none" xmlns="http://www.w3.org/2000/svg">
+/** Home's floating add button — node 93:1043 in 687:6728, the same disc at 54x54. */
+export const homeAddFab = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="54" height="54" viewBox="0 0 54 54" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Group 1597881065">
+<path id="Ellipse 96" d="M54 27C54 41.9117 41.9117 54 27 54C12.0883 54 0 41.9117 0 27C0 12.0883 12.0883 0 27 0C41.9117 0 54 12.0883 54 27Z" fill="#FF4D00"/>
+<g id="add">
+<path id="icon" d="M25.4085 28.5915H15.8598V25.4085H25.4085V15.8598H28.5915V25.4085H38.1402V28.5915H28.5915V38.1402H25.4085V28.5915Z" fill="#FEF7FF"/>
+</g>
+</g>
+</svg>
+`;
+
+export const momentBellCircle =`<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="41" height="41" viewBox="0 0 41 41" fill="none" xmlns="http://www.w3.org/2000/svg">
 <g id="Ellipse 20">
 <path d="M41 20.5C41 31.8218 31.8218 41 20.5 41C9.17816 41 0 31.8218 0 20.5C0 9.17816 9.17816 0 20.5 0C31.8218 0 41 9.17816 41 20.5Z" fill="white"/>
 <path d="M20.5 0.5C31.5457 0.5 40.5 9.45431 40.5 20.5C40.5 31.5457 31.5457 40.5 20.5 40.5C9.45431 40.5 0.5 31.5457 0.5 20.5C0.5 9.45431 9.45431 0.5 20.5 0.5Z" stroke="black" stroke-opacity="0.23"/>

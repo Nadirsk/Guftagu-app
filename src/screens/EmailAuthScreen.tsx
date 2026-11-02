@@ -2,6 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ArrowLeft, Mail, MailMinus } from 'lucide-react-native';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
@@ -68,6 +69,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'EmailAuth'>
 
 export default function EmailAuthScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const { t } = useTranslation();
   const { px } = useDesignScale();
   const { sendOtp, verifyOtp } = useAuth();
 
@@ -94,7 +96,7 @@ export default function EmailAuthScreen() {
   async function requestCode() {
     if (busy) return;
     if (!email.trim()) {
-      Alert.alert('Email required', 'Enter your email address first.');
+      Alert.alert(t('email.requiredTitle'), t('email.requiredBody'));
       return;
     }
 
@@ -108,8 +110,8 @@ export default function EmailAuthScreen() {
       resendIn.start(OTP_RESEND_COOLDOWN_SECONDS);
     } catch (error) {
       Alert.alert(
-        'Could not send the code',
-        error instanceof ApiError ? error.displayMessage : 'Something went wrong. Try again.',
+        t('common.couldNotSend'),
+        error instanceof ApiError ? error.displayMessage : t('common.somethingWrong'),
       );
     } finally {
       setPending(null);
@@ -123,7 +125,7 @@ export default function EmailAuthScreen() {
 
     const otp = code.join('');
     if (otp.length !== D.otp.count) {
-      Alert.alert('Enter the code', `Type all ${D.otp.count} digits from your email.`);
+      Alert.alert(t('common.enterCode'), t('email.typeDigits', { count: D.otp.count }));
       return;
     }
 
@@ -132,8 +134,8 @@ export default function EmailAuthScreen() {
       await verifyOtp(identifier, otp);
     } catch (error) {
       Alert.alert(
-        'Could not verify',
-        error instanceof ApiError ? error.displayMessage : 'Something went wrong. Try again.',
+        t('common.couldNotVerify'),
+        error instanceof ApiError ? error.displayMessage : t('common.somethingWrong'),
       );
     } finally {
       setPending(null);
@@ -143,10 +145,10 @@ export default function EmailAuthScreen() {
   const resendWaiting = busy || resendIn.secondsLeft > 0;
   const resendLabel =
     pending === 'send'
-      ? 'Sending…'
+      ? t('common.sending')
       : resendIn.secondsLeft > 0
-        ? `Resend in ${resendIn.secondsLeft}s`
-        : 'Resend Code';
+        ? t('common.resendIn', { seconds: resendIn.secondsLeft })
+        : t('common.resendCode');
 
   const insets = useSafeAreaInsets();
   const topInset = Math.max(insets.top, 16);
@@ -175,7 +177,7 @@ export default function EmailAuthScreen() {
           },
         ]}
       >
-        Continue with E-mail Address
+        {t('email.heading')}
       </Text>
 
       <View
@@ -197,7 +199,7 @@ export default function EmailAuthScreen() {
         <MailMinus size={px(D.emailBox.iconSize)} color={colors.black} strokeWidth={2} />
 
         <Text style={[styles.emailLabel, { fontSize: px(D.emailBox.labelFontSize) }]}>
-          E-mail
+          {t('email.label')}
         </Text>
 
         <TextInput
@@ -211,7 +213,7 @@ export default function EmailAuthScreen() {
           }}
           onFocus={() => setEmailFocused(true)}
           onBlur={() => setEmailFocused(false)}
-          placeholder="E-mail Address"
+          placeholder={t('email.placeholder')}
           placeholderTextColor={colors.inputPlaceholder}
           keyboardType="email-address"
           autoCapitalize="none"
@@ -246,7 +248,7 @@ export default function EmailAuthScreen() {
             <Mail size={px(D.getCode.iconSize)} color={colors.black} strokeWidth={2} />
           )}
           <Text style={[styles.getCodeLabel, { fontSize: px(D.getCode.fontSize) }]}>
-            {pending === 'send' ? 'Sending…' : 'Get code via Email'}
+            {pending === 'send' ? t('common.sending') : t('email.getCode')}
           </Text>
         </Pressable>
       ) : (
@@ -320,7 +322,7 @@ export default function EmailAuthScreen() {
         {pending === 'verify' ? (
           <ActivityIndicator color={colors.white} />
         ) : (
-          <Text style={[styles.submitLabel, { fontSize: px(D.submit.fontSize) }]}>Submit</Text>
+          <Text style={[styles.submitLabel, { fontSize: px(D.submit.fontSize) }]}>{t('common.submit')}</Text>
         )}
       </Pressable>
       </View>

@@ -59,6 +59,8 @@ export const colors = {
   postAudienceBorder: 'rgba(0,0,0,0.24)', // the audience select (99:1446)
   postButton: '#DE4200', // the "Post" pill (99:1467)
   commentReply: '#0077FF', // Post Details "Reply" link (node 82:900)
+  avatarEmptyFill: '#E4E7EB', // profile setup avatar before a photo is picked
+  avatarEmptyIcon: '#9AA1AC',
   goldGradient: ['#4e4714', '#fbbc05'] as const,
   darkGradient: ['#4e4714', '#251e0a'] as const,
 };

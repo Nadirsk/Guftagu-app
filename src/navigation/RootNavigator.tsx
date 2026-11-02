@@ -8,12 +8,18 @@ import HomeScreen from '../screens/HomeScreen';
 import MediaViewerScreen from '../screens/moment/MediaViewerScreen';
 import MomentNotificationsScreen from '../screens/moment/MomentNotificationsScreen';
 import PostDetailsScreen from '../screens/moment/PostDetailsScreen';
+import ChatSettingsScreen from '../screens/chats/ChatSettingsScreen';
+import ConversationScreen from '../screens/chats/ConversationScreen';
+import ReportScreen from '../screens/chats/ReportScreen';
 import PostMomentScreen from '../screens/moment/PostMomentScreen';
 import PhoneAuthScreen from '../screens/PhoneAuthScreen';
 import ProfileSetupScreen from '../screens/ProfileSetupScreen';
+import RankingRewardScreen from '../screens/ranking/RankingRewardScreen';
+import RankingScreen from '../screens/ranking/RankingScreen';
 import CreateRoomScreen from '../screens/room/CreateRoomScreen';
 import RoomScreen from '../screens/room/RoomScreen';
 import SearchScreen from '../screens/SearchScreen';
+import WeeklyStarScreen from '../screens/weeklyStar/WeeklyStarScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import { colors } from '../theme/tokens';
 import TabShell from './TabShell';
@@ -73,6 +79,17 @@ export default function RootNavigator() {
             <Stack.Screen name="MomentNotifications" component={MomentNotificationsScreen} />
             <Stack.Screen name="Room" component={RoomScreen} />
             <Stack.Screen name="CreateRoom" component={CreateRoomScreen} />
+            <Stack.Screen name="Conversation" component={ConversationScreen} />
+            <Stack.Screen name="ChatSettings" component={ChatSettingsScreen} />
+            <Stack.Screen name="Report" component={ReportScreen} />
+            <Stack.Screen name="WeeklyStar" component={WeeklyStarScreen} />
+            <Stack.Screen name="Ranking" component={RankingScreen} />
+            {/* Rounded top corners in Figma: it slides up over the Weekly page. */}
+            <Stack.Screen
+              name="RankingReward"
+              component={RankingRewardScreen}
+              options={{ presentation: 'transparentModal', animation: 'slide_from_bottom' }}
+            />
             <Stack.Screen
               name="MediaViewer"
               component={MediaViewerScreen}

@@ -3,6 +3,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SvgXml } from 'react-native-svg';
 
 import * as icons from '../../assets/home/icons';
+import * as lightIcons from '../../assets/party/icons';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
 import { BOTTOM_NAV } from './geometry';
@@ -12,7 +13,9 @@ import { BOTTOM_NAV } from './geometry';
  * keep `BOTTOM_NAV_HEIGHT` of their scroll content clear beneath it.
  *
  * Every item is white; the selected one is solid and the rest sit at 50%, which
- * is the whole of Figma's selected state.
+ * is the whole of Figma's selected state. The Party frames draw the same bar the
+ * other way round — white, black glyphs, 38% black outline (687:6916) — so `tone`
+ * picks between the two.
  */
 
 const GLYPHS: Record<NavKey, string> = {
@@ -21,6 +24,15 @@ const GLYPHS: Record<NavKey, string> = {
   Chats: icons.tabChats,
   Mine: icons.tabMine,
 };
+
+const LIGHT_GLYPHS: Record<NavKey, string> = {
+  Home: lightIcons.tabHome,
+  Party: lightIcons.tabParty,
+  Chats: lightIcons.tabChats,
+  Mine: lightIcons.tabMine,
+};
+
+const LIGHT = { background: colors.white, border: 'rgba(0,0,0,0.38)', label: colors.black } as const;
 
 export type NavKey = (typeof BOTTOM_NAV.items)[number]['key'];
 
@@ -33,20 +45,30 @@ const LABEL_WIDTH = 80;
 /** Height the screens have to keep clear beneath themselves, in design pixels. */
 export const BOTTOM_NAV_HEIGHT = BOTTOM_NAV.height;
 
+/** The bar's real height in screen pixels, device inset included. */
+export function useBottomNavHeight() {
+  const { px } = useDesignScale();
+  const insets = useSafeAreaInsets();
+  const { itemsTop, item } = BOTTOM_NAV;
+  // Figma's 92px already includes the space under the labels that the home
+  // indicator uses, so a device inset only adds height when it is larger.
+  const below = BOTTOM_NAV.height - itemsTop - item.height;
+  return px(itemsTop + item.height) + Math.max(px(below), insets.bottom);
+}
+
 export default function BottomNav({
   active,
   onSelect,
+  tone = 'dark',
 }: {
   active: NavKey;
   onSelect?: (key: NavKey) => void;
+  tone?: 'dark' | 'light';
 }) {
   const { px } = useDesignScale();
-  const insets = useSafeAreaInsets();
+  const light = tone === 'light';
+  const height = useBottomNavHeight();
   const { item } = BOTTOM_NAV;
-
-  // Figma's 92px already includes the space under the labels that the home
-  // indicator uses, so a device inset only adds height when it is larger.
-  const below = BOTTOM_NAV.height - BOTTOM_NAV.itemsTop - item.height;
 
   return (
     <View
@@ -55,10 +77,11 @@ export default function BottomNav({
         {
           left: px(BOTTOM_NAV.x),
           width: px(BOTTOM_NAV.width),
-          height: px(BOTTOM_NAV.itemsTop + item.height) + Math.max(px(below), insets.bottom),
+          height,
           borderTopLeftRadius: px(BOTTOM_NAV.radius),
           borderTopRightRadius: px(BOTTOM_NAV.radius),
         },
+        light && { backgroundColor: LIGHT.background, borderColor: LIGHT.border },
       ]}
     >
       {BOTTOM_NAV.items.map(({ key, x }) => (
@@ -77,7 +100,7 @@ export default function BottomNav({
             opacity: key === active ? 1 : BOTTOM_NAV.idleOpacity,
           }}
         >
-          <SvgXml xml={GLYPHS[key]} width={px(item.icon)} height={px(item.icon)} />
+          <SvgXml xml={(light ? LIGHT_GLYPHS : GLYPHS)[key]} width={px(item.icon)} height={px(item.icon)} />
           <Text
             numberOfLines={1}
             style={[
@@ -87,6 +110,7 @@ export default function BottomNav({
                 fontSize: px(item.labelSize),
                 lineHeight: px(item.labelHeight),
               },
+              light && { color: LIGHT.label },
             ]}
           >
             {key}

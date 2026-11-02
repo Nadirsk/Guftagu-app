@@ -225,12 +225,19 @@ export function FollowChip({
   following,
   busy,
   onPress,
+  followingLabel,
 }: {
   following: boolean;
   busy: boolean;
   onPress: () => void;
+  /**
+   * Contacts → Following (514:3526) labels the chip "UnFollow" and keeps the +;
+   * its content then starts at x 27 rather than 35.
+   */
+  followingLabel?: string;
 }) {
   const { px } = useDesignScale();
+  const unfollow = following && followingLabel != null;
 
   return (
     <Pressable
@@ -257,10 +264,10 @@ export function FollowChip({
       <View
         style={[
           styles.followContent,
-          { left: px(FOLLOW.content.x), top: px(FOLLOW.content.y), gap: px(FOLLOW.content.gap) },
+          { left: px(unfollow ? 27 : FOLLOW.content.x), top: px(FOLLOW.content.y), gap: px(FOLLOW.content.gap) },
         ]}
       >
-        {following ? null : (
+        {following && !unfollow ? null : (
           <Plus size={px(FOLLOW.content.icon)} color={colors.followLabel} strokeWidth={2} />
         )}
         <Text
@@ -272,7 +279,7 @@ export function FollowChip({
             },
           ]}
         >
-          {following ? 'Following' : 'Follow'}
+          {unfollow ? followingLabel : following ? 'Following' : 'Follow'}
         </Text>
       </View>
     </Pressable>

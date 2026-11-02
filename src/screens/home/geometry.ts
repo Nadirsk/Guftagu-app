@@ -64,7 +64,7 @@ export const HEADER = {
 
 /** Ranking banners — the artwork's top-left on the frame (see banners.tsx). */
 export const BANNERS = {
-  left: { x: 16, y: 357 }, // Group 8921
+  left: { x: 16, y: 357 }, // Group 8921 — wears Group 8922's ribbon, so it too starts at 339
   right: { x: 208, y: 357 }, // Group 8922 — its ribbon starts 18px higher, at 339
   wide: { x: 14, y: 465 }, // Group 8923 — its ribbon starts 19px higher, at 446
 } as const;
@@ -145,7 +145,7 @@ export const FAMILY = {
  */
 export const REWARDS = {
   width: 353,
-  height: 488,
+  height: 594,
   centerOffset: -21,
   /** download (1) 2 — a 256.7x109 window onto the ribbon bitmap. */
   ribbon: {
@@ -162,7 +162,7 @@ export const REWARDS = {
    * to #FF8B25 at the bottom. Children below are relative to the inside of that
    * stroke (343x411), the way the stroke clips them.
    */
-  card: { y: 67, width: 353, height: 421, radius: 19, stroke: 5 },
+  card: { y: 67, width: 353, height: 527, radius: 19, stroke: 5 },
   /** Frame 1597881098 — the yellow wash; the subtitle is centred inside it. */
   wash: { x: 0, y: -12, width: 342, height: 105 },
   subtitle: { y: 69, size: 14, height: 21 },
@@ -177,8 +177,15 @@ export const REWARDS = {
     band: { x: -1, y: 63, width: 95, height: 28 },
     label: { y: 68, size: 11, height: 17, coin: 13, gap: 2 },
   },
-  collect: { y: 330, width: 313, height: 53, radius: 37, size: 16, lineHeight: 24 },
+  collect: { y: 436, width: 313, height: 53, radius: 37, size: 16, lineHeight: 24 },
 } as const;
+
+/**
+ * The orange add button — node 93:1043 in "Following" (687:6728), file
+ * E20HaZSfa6z2BNDlbutRuL. It floats at x 336, y 672-726 on the 874px frame, so
+ * 56px above the bar's top (782); it opens Post Moment.
+ */
+export const ADD_FAB = { x: 336, size: 54, aboveNav: 56 } as const;
 
 /**
  * The bottom bar — Frame 1597881477 (687:6679). 406 wide and hung 2px past each

@@ -2,18 +2,20 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { setStatusBarStyle } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { SvgXml } from 'react-native-svg';
 
 import { api } from '../../api/client';
+import * as icons from '../../assets/home/icons';
 import { storage, useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
 import { useDesignScale } from '../../theme/layout';
 import { colors } from '../../theme/tokens';
-import { BOTTOM_NAV_HEIGHT } from './BottomNav';
-import DailyRewards from './DailyRewards';
+import { BOTTOM_NAV_HEIGHT, useBottomNavHeight } from './BottomNav';
+import DailyRewards, { type CheckinDay } from './DailyRewards';
 import FamilyBody from './FamilyBody';
 import { FeedPlaceholder, PostCard, useFeed, useFollow } from './feed';
-import { LIVE_CARD, POST } from './geometry';
+import { ADD_FAB, LIVE_CARD, POST } from './geometry';
 import { HomeHeader, TabRow, type TabName } from './header';
 import HeroCard from './HeroCard';
 
@@ -40,9 +42,10 @@ export default function HomeFeedScreen() {
   const { px } = useDesignScale();
   const navigation = useNavigation<NavigationProp>();
   const { user, token } = useAuth();
+  const navHeight = useBottomNavHeight();
   const [tab, setTab] = useState<TabName>('For You');
   const [refreshing, setRefreshing] = useState(false);
-  const [showRewards, setShowRewards] = useState(false);
+  const [week, setWeek] = useState<CheckinDay[] | null>(null);
 
   const forYou = useFeed('discover');
   const following = useFeed('following');
@@ -82,26 +85,26 @@ export default function HomeFeedScreen() {
     }, [refreshVisible]),
   );
 
-  const rewardsKey = `${REWARDS_KEY}.${user?.uuid ?? 'guest'}`;
+  // The popup is the server's streak calendar, shown only while today's reward is unclaimed.
   useEffect(() => {
     let cancelled = false;
-    storage
-      .getItemAsync(rewardsKey)
-      .then((last) => {
-        if (!cancelled && last !== today()) setShowRewards(true);
+    api<{ claimed_today: boolean; week: CheckinDay[] }>('/checkin', { token })
+      .then((s) => {
+        if (!cancelled && !s.claimed_today) setWeek(s.week);
       })
-      .catch(() => {
-        if (!cancelled) setShowRewards(true);
-      });
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [rewardsKey]);
+  }, [token]);
 
-  const collect = useCallback(() => {
-    setShowRewards(false);
-    storage.setItemAsync(rewardsKey, today()).catch(() => undefined);
-  }, [rewardsKey]);
+  const claim = useCallback(async () => {
+    try {
+      return await api<{ reward_type: string; reward_value: number }>('/checkin', { method: 'POST', token });
+    } catch {
+      return null;
+    }
+  }, [token]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -191,7 +194,24 @@ export default function HomeFeedScreen() {
         {body}
       </ScrollView>
 
-      {showRewards ? <DailyRewards onCollect={collect} /> : null}
+      {/* For You only. Floats over the feed, a fixed 56px above the bar; under the rewards popup. */}
+      {tab === 'For You' ? (
+        <Pressable
+          onPress={() => navigation.navigate('PostMoment')}
+          hitSlop={px(6)}
+          style={{
+            position: 'absolute',
+            left: px(ADD_FAB.x),
+            bottom: navHeight + px(ADD_FAB.aboveNav),
+            width: px(ADD_FAB.size),
+            height: px(ADD_FAB.size),
+          }}
+        >
+          <SvgXml xml={icons.homeAddFab} width={px(ADD_FAB.size)} height={px(ADD_FAB.size)} />
+        </Pressable>
+      ) : null}
+
+      {week ? <DailyRewards week={week} onClaim={claim} onClose={() => setWeek(null)} /> : null}
     </View>
   );
 }

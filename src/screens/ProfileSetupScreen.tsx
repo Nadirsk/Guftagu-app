@@ -1,8 +1,9 @@
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
-import { ArrowLeft, CalendarDays, Camera, ChevronDown, Images, Lock } from 'lucide-react-native';
-import { ReactNode, useEffect, useState } from 'react';
+import { ArrowLeft, CalendarDays, Camera, ChevronDown, Images, Lock, User } from 'lucide-react-native';
+import { ReactNode, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Alert,
   Image,
@@ -29,9 +30,8 @@ import { colors, typography } from '../theme/tokens';
 
 const background = require('../assets/profile-setup-bg.png');
 const logo = require('../assets/guftagu-logo.png');
-const avatarPlaceholder = require('../assets/avatar-placeholder.png');
 
-// Figma node 2:2 ("iPhone 17 - 1") — every number below is a design pixel on the
+// Figma node 2:2 ("signup") — every number below is a design pixel on the
 // 402x874 frame. Values under `card` and its children are offsets inside node
 // 10:37, the white sheet that starts at y=231. The design positions these
 // absolutely (the back arrow and the avatar overlap vertically), so the screen
@@ -41,19 +41,18 @@ const D = {
   // Node 6:3 "Guftagu" — white Helvetica Black Oblique with a hard black shadow.
   // Exported at 4x from Figma, so the asset is already rotated -6.39deg; do not
   // rotate it again. 54.3 keeps the 787x217 export's exact aspect ratio.
-  logo: { x: 111, y: 121, width: 197, height: 54.3 },
-  card: { y: 231, radius: 30 }, // node 10:37
+  logo: { x: 107.4, y: 115.8, width: 197, height: 54.3 },
+  card: { y: 182, radius: 30 }, // node 10:37
   back: { x: 16, y: 29, size: 24 }, // node 297:3290 "arrow_back"
   avatar: { x: 156, y: 41, size: 90 }, // node 9:4 "Ellipse 1"
   badge: { x: 204, y: 101, size: 42, icon: 21 }, // nodes 9:5 / 9:6 "camera"
-  // y and gap shrunk from the original Figma 170/16 — the design had 4 fields;
-  // email + phone (read-only, added for the social-sign-in case) make 6, and
-  // the brief is to show every field at once rather than scroll the card.
-  form: { x: 16, y: 155, width: 370, gap: 11 }, // node 9:16
-  field: { height: 46, radius: 10 }, // nodes 9:9 / 9:11 / 9:24 / 297:3293
-  textField: { paddingLeft: 20, paddingRight: 18, icon: 19 }, // nodes 9:9 / 9:11
+  // The design now has all 6 fields (name, email, phone, birth date, gender,
+  // country), so the form uses Figma's own y / gap / height verbatim.
+  form: { x: 16, y: 170, width: 370, gap: 16 }, // node 9:16
+  field: { height: 54, radius: 10 }, // nodes 9:9 / 353:2131 / 353:2133 / 9:11 / 9:24 / 297:3293
+  textField: { paddingLeft: 19, paddingRight: 19, icon: 19 }, // nodes 9:9 / 9:11
   selectField: { paddingLeft: 15, paddingRight: 13, icon: 24, leadingIcon: 19 }, // nodes 9:24 / 297:3293
-  confirm: { x: 18, width: 366, height: 55, radius: 42, bottomGap: 58 }, // node 9:33
+  confirm: { x: 18, width: 366, height: 55, radius: 42, bottomGap: 25 }, // node 9:33, top 612 in the 692px card
   fieldValueGap: 10, // between a field's leading icon/flag and its text
   fontSize: { field: 15, confirm: 16 },
 };
@@ -118,8 +117,24 @@ function SelectField({
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ProfileSetup'>;
 
+const GENDER_LABEL_KEYS: Record<string, string> = {
+  Male: 'profile.male',
+  Female: 'profile.female',
+  Other: 'profile.other',
+  'Prefer not to say': 'profile.preferNot',
+};
+
 export default function ProfileSetupScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const { t } = useTranslation();
+  const genderOptions = useMemo(
+    () =>
+      GENDER_OPTIONS.map((option) => ({
+        ...option,
+        label: t(GENDER_LABEL_KEYS[option.value]),
+      })),
+    [t],
+  );
   const insets = useSafeAreaInsets();
   const { px } = useDesignScale();
 
@@ -165,7 +180,7 @@ export default function ProfileSetupScreen() {
   const [countryModalVisible, setCountryModalVisible] = useState(false);
 
   const selectedCountry = COUNTRY_OPTIONS.find((c) => c.code === countryCode);
-  const selectedGender = GENDER_OPTIONS.find((option) => option.value === gender);
+  const selectedGender = genderOptions.find((option) => option.value === gender);
   const GenderIcon = selectedGender?.Icon;
 
   // Registration finishes here: the account already exists from OTP verification,
@@ -175,7 +190,7 @@ export default function ProfileSetupScreen() {
     if (saving) return;
 
     if (!userName.trim() || !dateOfBirth || !selectedGender) {
-      Alert.alert('Almost there', 'Add your name, date of birth and gender to continue.');
+      Alert.alert(t('profile.almostThere'), t('profile.needDetails'));
       return;
     }
 
@@ -192,8 +207,8 @@ export default function ProfileSetupScreen() {
       });
     } catch (error) {
       Alert.alert(
-        'Could not save your profile',
-        error instanceof ApiError ? error.displayMessage : 'Something went wrong. Try again.',
+        t('profile.couldNotSave'),
+        error instanceof ApiError ? error.displayMessage : t('common.somethingWrong'),
       );
     } finally {
       setSaving(false);
@@ -203,15 +218,15 @@ export default function ProfileSetupScreen() {
   // A denial is permanent until the user changes it in Settings, so an alert
   // that only says "no" would be a dead end — offer the way back.
   const openSettings = (message: string) =>
-    Alert.alert('Permission needed', message, [
-      { text: 'Not now', style: 'cancel' },
-      { text: 'Open settings', onPress: () => Linking.openSettings() },
+    Alert.alert(t('profile.permissionNeeded'), message, [
+      { text: t('profile.notNow'), style: 'cancel' },
+      { text: t('profile.openSettings'), onPress: () => Linking.openSettings() },
     ]);
 
   const takePhoto = async () => {
     const { granted } = await ImagePicker.requestCameraPermissionsAsync();
     if (!granted) {
-      openSettings('Allow camera access to take a profile picture.');
+      openSettings(t('profile.cameraAccess'));
       return;
     }
     const result = await ImagePicker.launchCameraAsync(PHOTO_OPTIONS);
@@ -221,7 +236,7 @@ export default function ProfileSetupScreen() {
   const pickFromGallery = async () => {
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) {
-      openSettings('Allow photo access to choose a profile picture.');
+      openSettings(t('profile.photoAccess'));
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync(PHOTO_OPTIONS);
@@ -292,21 +307,39 @@ export default function ProfileSetupScreen() {
           <ArrowLeft size={px(D.back.size)} color={colors.black} strokeWidth={2} />
         </Pressable>
 
-        <Image
-          source={photoUri ? { uri: photoUri } : avatarPlaceholder}
-          style={{
-            position: 'absolute',
-            left: px(D.avatar.x),
-            top: px(D.avatar.y),
-            width: px(D.avatar.size),
-            height: px(D.avatar.size),
-            borderRadius: px(D.avatar.size / 2),
-          }}
-        />
+        {photoUri ? (
+          <Image
+            source={{ uri: photoUri }}
+            style={{
+              position: 'absolute',
+              left: px(D.avatar.x),
+              top: px(D.avatar.y),
+              width: px(D.avatar.size),
+              height: px(D.avatar.size),
+              borderRadius: px(D.avatar.size / 2),
+            }}
+          />
+        ) : (
+          // No photo yet: a neutral silhouette, not a stock picture of someone.
+          <View
+            style={[
+              styles.avatarEmpty,
+              {
+                left: px(D.avatar.x),
+                top: px(D.avatar.y),
+                width: px(D.avatar.size),
+                height: px(D.avatar.size),
+                borderRadius: px(D.avatar.size / 2),
+              },
+            ]}
+          >
+            <User size={px(D.avatar.size * 0.5)} color={colors.avatarEmptyIcon} strokeWidth={1.8} />
+          </View>
+        )}
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Change profile picture"
+          accessibilityLabel={t('profile.changePicture')}
           onPress={() => setPhotoSheetVisible(true)}
           style={[
             styles.badge,
@@ -335,7 +368,7 @@ export default function ProfileSetupScreen() {
             <TextInput
               value={userName}
               onChangeText={setUserName}
-              placeholder="User name"
+              placeholder={t('profile.userName')}
               placeholderTextColor={colors.textMuted}
               style={[
                 styles.textInput,
@@ -363,7 +396,7 @@ export default function ProfileSetupScreen() {
               value={email}
               onChangeText={setEmail}
               editable={!emailLocked}
-              placeholder="Email"
+              placeholder={t('profile.email')}
               placeholderTextColor={colors.textMuted}
               keyboardType="email-address"
               autoCapitalize="none"
@@ -391,7 +424,7 @@ export default function ProfileSetupScreen() {
               value={phoneNumber}
               onChangeText={(text) => setPhoneNumber(text.replace(/\D/g, ''))}
               editable={!phoneLocked}
-              placeholder="Phone Number"
+              placeholder={t('profile.phone')}
               placeholderTextColor={colors.textMuted}
               keyboardType="phone-pad"
               style={[
@@ -404,7 +437,7 @@ export default function ProfileSetupScreen() {
           </View>
 
           <SelectField
-            placeholder="DD/MM/YYYY"
+            placeholder={t('profile.dob')}
             value={dateOfBirth ? formatDateDMY(dateOfBirth) : undefined}
             onPress={() => setDateModalVisible(true)}
             boxStyle={fieldBoxStyle}
@@ -422,7 +455,7 @@ export default function ProfileSetupScreen() {
           />
 
           <SelectField
-            placeholder="Select Gender"
+            placeholder={t('profile.selectGender')}
             value={gender}
             leading={
               GenderIcon ? (
@@ -439,7 +472,7 @@ export default function ProfileSetupScreen() {
           />
 
           <SelectField
-            placeholder="Select Country"
+            placeholder={t('profile.selectCountry')}
             value={
               selectedCountry
                 ? `${countryFlagEmoji(selectedCountry.code)}  ${selectedCountry.name}`
@@ -467,14 +500,14 @@ export default function ProfileSetupScreen() {
                 width: px(D.confirm.width),
                 height: px(D.confirm.height),
                 borderRadius: px(D.confirm.radius),
-                // Figma pins Confirm 58px above the bottom of the 874px frame; on
+                // Figma pins Confirm 25px above the bottom of the 874px frame; on
                 // taller devices keep that gap but never sit under the home indicator.
                 bottom: Math.max(px(D.confirm.bottomGap), insets.bottom + px(12)),
               },
             ]}
           >
             <Text style={[styles.confirmButtonText, { fontSize: px(D.fontSize.confirm) }]}>
-              {saving ? 'Saving…' : 'Confirm'}
+              {saving ? t('common.saving') : t('common.confirm')}
             </Text>
           </Pressable>
         )}
@@ -482,17 +515,17 @@ export default function ProfileSetupScreen() {
 
       <ActionSheet
         visible={photoSheetVisible}
-        title="Profile picture"
+        title={t('profile.pictureTitle')}
         actions={[
-          { key: 'camera', label: 'Take a photo', Icon: Camera, onPress: takePhoto },
-          { key: 'gallery', label: 'Choose from gallery', Icon: Images, onPress: pickFromGallery },
+          { key: 'camera', label: t('profile.takePhoto'), Icon: Camera, onPress: takePhoto },
+          { key: 'gallery', label: t('profile.chooseGallery'), Icon: Images, onPress: pickFromGallery },
         ]}
         onClose={() => setPhotoSheetVisible(false)}
       />
 
       <DatePickerModal
         visible={dateModalVisible}
-        title="Date of birth"
+        title={t('profile.dobTitle')}
         value={dateOfBirth}
         onConfirm={setDateOfBirth}
         onClose={() => setDateModalVisible(false)}
@@ -500,8 +533,8 @@ export default function ProfileSetupScreen() {
 
       <SelectModal
         visible={genderModalVisible}
-        title="Select Gender"
-        options={GENDER_OPTIONS}
+        title={t('profile.selectGender')}
+        options={genderOptions}
         selectedValue={gender}
         onSelect={setGender}
         onClose={() => setGenderModalVisible(false)}
@@ -509,11 +542,11 @@ export default function ProfileSetupScreen() {
 
       <SelectModal
         visible={countryModalVisible}
-        title="Select Country"
+        title={t('common.selectCountry')}
         options={COUNTRY_SELECT_OPTIONS}
         selectedValue={countryCode}
         searchable
-        searchPlaceholder="Search countries"
+        searchPlaceholder={t('common.searchCountries')}
         onSelect={setCountryCode}
         onClose={() => setCountryModalVisible(false)}
       />
@@ -544,6 +577,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.09,
     shadowRadius: 2,
     elevation: 3,
+  },
+  avatarEmpty: {
+    position: 'absolute',
+    backgroundColor: colors.avatarEmptyFill,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   fieldBox: {
     borderWidth: 1,
