@@ -42,18 +42,30 @@ export type NavKey = (typeof BOTTOM_NAV.items)[number]['key'];
  */
 const LABEL_WIDTH = 80;
 
+/** Space kept under the labels, in design pixels. */
+const BELOW_LABELS = 3;
+
+/** How much of the device's bottom inset the bar keeps clear under the labels. */
+const INSET_SHARE = 0.2;
+
+/** Screen pixels the bar's background extends beneath the bottom edge. */
+const EDGE_BLEED = 4;
+
+/** Extra bar height over Figma's, in design pixels; the items sit half of it lower. */
+const EXTRA_HEIGHT = 12;
+
 /** Height the screens have to keep clear beneath themselves, in design pixels. */
-export const BOTTOM_NAV_HEIGHT = BOTTOM_NAV.height;
+export const BOTTOM_NAV_HEIGHT = BOTTOM_NAV.height + EXTRA_HEIGHT;
 
 /** The bar's real height in screen pixels, device inset included. */
 export function useBottomNavHeight() {
   const { px } = useDesignScale();
   const insets = useSafeAreaInsets();
   const { itemsTop, item } = BOTTOM_NAV;
-  // Figma's 92px already includes the space under the labels that the home
-  // indicator uses, so a device inset only adds height when it is larger.
-  const below = BOTTOM_NAV.height - itemsTop - item.height;
-  return px(itemsTop + item.height) + Math.max(px(below), insets.bottom);
+  // Figma leaves 25px under the labels, which on a tall phone reads as an empty strip at the
+  // bottom of the bar. Keep a small margin instead, or the home indicator's inset if that is bigger.
+  // The gesture pill is a thin line near the very edge, so only part of the inset is kept clear.
+  return px(itemsTop + item.height + EXTRA_HEIGHT) + Math.max(px(BELOW_LABELS), insets.bottom * INSET_SHARE);
 }
 
 export default function BottomNav({
@@ -77,7 +89,10 @@ export default function BottomNav({
         {
           left: px(BOTTOM_NAV.x),
           width: px(BOTTOM_NAV.width),
-          height,
+          // Runs past the screen's bottom edge: stopping exactly on it leaves the last pixel row
+          // uncovered (rounding), and the feed behind the bar shows through as a thin line.
+          bottom: -EDGE_BLEED,
+          height: height + EDGE_BLEED,
           borderTopLeftRadius: px(BOTTOM_NAV.radius),
           borderTopRightRadius: px(BOTTOM_NAV.radius),
         },
@@ -93,7 +108,7 @@ export default function BottomNav({
             // The bar's 1px border moves its content box; Figma's x is from the outer
             // edge. The cell is widened round the item's centre — see LABEL_WIDTH.
             left: px(x - (LABEL_WIDTH - item.width) / 2) - 1,
-            top: px(BOTTOM_NAV.itemsTop) - 1,
+            top: px(BOTTOM_NAV.itemsTop + EXTRA_HEIGHT / 2) - 1,
             width: px(LABEL_WIDTH),
             height: px(item.height),
             alignItems: 'center',

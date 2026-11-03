@@ -2,7 +2,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   Armchair,
   EllipsisVertical,
-  Gamepad2,
   Gift,
   ImageIcon,
   Lock,
@@ -240,9 +239,7 @@ export function BottomBar(props: {
       {round(props.speakerOff ? <VolumeX size={px(17)} color={colors.white} /> : <Volume2 size={px(17)} color={colors.white} />, props.onSpeaker)}
       {props.seated ? round(props.micOn ? <Mic size={px(17)} color={colors.white} /> : <MicOff size={px(17)} color="rgba(255,255,255,0.6)" />, props.onMic) : null}
       <Pressable onPress={props.onGames} hitSlop={px(3)}>
-        <LinearGradient colors={['#4FD37A', '#1E9A4C']} style={{ width: px(40), height: px(40), borderRadius: px(20), alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#B8F5CC' }}>
-          <Gamepad2 size={px(20)} color={colors.white} />
-        </LinearGradient>
+        <Image source={require('../../assets/room/games-icon.png')} resizeMode="contain" style={{ width: px(42), height: px(42) }} />
       </Pressable>
     </View>
   );

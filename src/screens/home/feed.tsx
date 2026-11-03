@@ -1,15 +1,13 @@
-import { Play } from 'lucide-react-native';
+import { Heart, MessageCircle, MessageSquare, Play } from 'lucide-react-native';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SvgXml } from 'react-native-svg';
 
 import { api, apiWithMeta } from '../../api/client';
-import * as icons from '../../assets/home/icons';
 import { useAuth } from '../../auth/AuthContext';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
 import { usePostLike } from '../moment/PostStateContext';
-import { avatarSource, type FeedItem, isVideoUrl, type PostAuthor } from '../moment/parts';
+import { avatarSource, type FeedItem, FollowChip, isVideoUrl, type PostAuthor } from '../moment/parts';
 import { POST } from './geometry';
 
 /**
@@ -103,68 +101,89 @@ function formatDate(iso: string | null) {
   return `${at.getDate()}/${at.getMonth() + 1}/${at.getFullYear()}`;
 }
 
+/** "2h ago" — the card's meta line; anything older than a week falls back to the date. */
+function timeAgo(iso: string | null) {
+  if (!iso) return '';
+  const at = new Date(iso).getTime();
+  if (Number.isNaN(at)) return '';
+  const minutes = Math.max(0, Math.floor((Date.now() - at) / 60000));
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return formatDate(iso);
+}
+
+/** "public" -> "Public". */
+function visibilityLabel(value: string | undefined) {
+  if (!value) return 'Public';
+  return value.charAt(0).toUpperCase() + value.slice(1).replace(/_/g, ' ');
+}
+
 /**
- * Every attachment the post carries, as the old Moment feed showed them: one
- * keeps Figma's single 247x213 frame, two or more become a three-across grid
- * of squares spanning the footer's width, wrapping onto as many rows as needed.
+ * Every attachment the post carries: one is a full-width 210-tall photo, two or
+ * more become a three-across grid of squares wrapping onto as many rows as needed.
  */
 function PostMedia({ post, onOpenMedia }: { post: FeedItem; onOpenMedia: (index: number) => void }) {
   const { px } = useDesignScale();
-  const { media, footer } = POST;
+  const { media, pad } = POST;
   const urls = post.media_urls ?? [];
   if (urls.length === 0) return null;
 
   const single = urls.length === 1;
-  const tile = (footer.width - media.gridGap * (media.columns - 1)) / media.columns;
-  const width = single ? media.width : tile;
+  const inner = POST.width - pad * 2 - 2; // the card's 1px border is inside its width
+  const tile = (inner - media.gridGap * (media.columns - 1)) / media.columns;
+  const width = single ? inner : tile;
   const height = single ? media.height : tile;
 
-  return (
-    <View
+  const renderTile = (url: string, index: number) => (
+    <Pressable
+      key={`${url}-${index}`}
+      onPress={() => onOpenMedia(index)}
       style={{
-        marginLeft: px(media.x),
-        marginTop: px(media.gap),
-        width: px(single ? media.width : footer.width),
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: px(media.gridGap),
+        width: px(width),
+        height: px(height),
+        borderRadius: px(single ? media.radius : media.tileRadius),
+        backgroundColor: colors.black,
+        overflow: 'hidden',
       }}
     >
-      {urls.map((url, index) => (
-        <Pressable
-          key={`${url}-${index}`}
-          onPress={() => onOpenMedia(index)}
-          style={{
-            width: px(width),
-            height: px(height),
-            borderRadius: px(single ? media.radius : media.tileRadius),
-            backgroundColor: colors.black,
-            overflow: 'hidden',
-          }}
-        >
-          {isVideoUrl(url) ? null : (
-            <Image source={{ uri: url }} resizeMode="cover" style={{ width: px(width), height: px(height) }} />
-          )}
-          {isVideoUrl(url) || post.type === 'audio' ? (
-            <View style={styles.play}>
-              <Play
-                size={px(single ? 33 : 26)}
-                color={colors.white}
-                fill={colors.white}
-                strokeWidth={0}
-              />
-            </View>
-          ) : null}
-        </Pressable>
+      {isVideoUrl(url) ? null : (
+        <Image source={{ uri: url }} resizeMode="cover" style={{ width: px(width), height: px(height) }} />
+      )}
+      {isVideoUrl(url) || post.type === 'audio' ? (
+        <View style={styles.play}>
+          <Play size={px(single ? 33 : 26)} color={colors.white} fill={colors.white} strokeWidth={0} />
+        </View>
+      ) : null}
+    </Pressable>
+  );
+
+  if (single) return <View style={{ marginTop: px(media.gap) }}>{renderTile(urls[0], 0)}</View>;
+
+  // Explicit rows of three: a flex-wrap row can push the third tile down when the
+  // scaled widths round a hair over the row's width.
+  const rows: string[][] = [];
+  for (let i = 0; i < urls.length; i += media.columns) rows.push(urls.slice(i, i + media.columns));
+
+  return (
+    <View style={{ marginTop: px(media.gap), gap: px(media.gridGap) }}>
+      {rows.map((row, r) => (
+        <View key={r} style={{ flexDirection: 'row', gap: px(media.gridGap) }}>
+          {row.map((url, c) => renderTile(url, r * media.columns + c))}
+        </View>
       ))}
     </View>
   );
 }
 
 /**
- * Frame 1597881455 — one post on the dark feed. Figma's sample is a photo post
- * with no caption; a caption, when there is one, sits where the photo starts and
- * pushes it down, and a text-only post is just the caption.
+ * One post on the dark feed — the "Home Feed Redesign" card: avatar with a soft
+ * blue ring, name over "2h ago · Public", a Follow pill (or the overflow dots on
+ * Following, where everyone is followed already), caption, media, then Like,
+ * Comment and a Chat pill under a hairline.
  */
 export function PostCard({
   post,
@@ -172,6 +191,7 @@ export function PostCard({
   following,
   followBusy,
   onToggleFollow,
+  onChat,
   onOpen,
   onOpenMedia,
 }: {
@@ -180,13 +200,15 @@ export function PostCard({
   following: boolean;
   followBusy: boolean;
   onToggleFollow: () => void;
+  /** Opens the conversation with the author. */
+  onChat: () => void;
   onOpen: () => void;
   /** Which tile was tapped, so the viewer opens on that one. */
   onOpenMedia: (index: number) => void;
 }) {
   const { px } = useDesignScale();
   const { liked, likeCount, commentCount, toggle } = usePostLike(post);
-  const { author, follow, chat, body, footer, actions } = POST;
+  const { author, pill, body, actions } = POST;
 
   return (
     <Pressable
@@ -196,77 +218,57 @@ export function PostCard({
         {
           width: px(POST.width),
           borderRadius: px(POST.radius),
-          paddingTop: px(POST.paddingTop),
-          paddingBottom: px(POST.paddingBottom),
+          paddingTop: px(POST.pad),
+          paddingHorizontal: px(POST.pad),
+          paddingBottom: px(POST.padBottom),
         },
       ]}
     >
-      <View style={[styles.row, { marginLeft: px(author.x), height: px(author.avatar) }]}>
-        <Image
-          source={avatarSource(post)}
-          style={{
-            width: px(author.avatar),
-            height: px(author.avatar),
-            borderRadius: px(author.avatar / 2),
-          }}
-        />
-        <Text
-          numberOfLines={1}
-          style={[
-            styles.name,
-            {
-              marginLeft: px(author.gap),
-              fontSize: px(author.nameSize),
-              lineHeight: px(author.nameHeight),
-              // Leaves room for Follow and for Chat on the right.
-              maxWidth: px(showFollow ? 150 : 210),
-            },
-          ]}
-        >
-          {post.author?.display_name ?? 'Guftagu user'}
-        </Text>
-        {showFollow && post.author ? (
-          <Pressable
-            disabled={followBusy}
-            onPress={onToggleFollow}
-            hitSlop={px(8)}
-            style={[styles.row, { marginLeft: px(follow.gap), gap: px(follow.dotGap) }]}
+      <View style={[styles.row, { gap: px(author.gap) }]}>
+        <View style={{ width: px(author.avatar), height: px(author.avatar) }}>
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: px(-author.ring),
+              left: px(-author.ring),
+              right: px(-author.ring),
+              bottom: px(-author.ring),
+              borderRadius: px(author.avatar / 2 + author.ring),
+              borderWidth: px(1.5),
+              borderColor: colors.feedRing,
+            }}
+          />
+          <Image
+            source={avatarSource(post)}
+            style={{
+              width: px(author.avatar),
+              height: px(author.avatar),
+              borderRadius: px(author.avatar / 2),
+            }}
+          />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text
+            numberOfLines={1}
+            style={[styles.name, { fontSize: px(author.nameSize), lineHeight: px(author.nameHeight) }]}
           >
-            <View
-              style={{
-                width: px(follow.dot),
-                height: px(follow.dot),
-                borderRadius: px(follow.dot / 2),
-                backgroundColor: colors.homeAccent,
-              }}
-            />
-            <Text style={[styles.link, { fontSize: px(follow.size), lineHeight: px(follow.height) }]}>
-              {following ? 'Following' : 'Follow'}
-            </Text>
-          </Pressable>
+            {post.author?.display_name ?? 'Guftagu user'}
+          </Text>
+          <Text style={[styles.meta, { fontSize: px(author.metaSize), lineHeight: px(author.metaHeight) }]}>
+            {timeAgo(post.created_at)} · {visibilityLabel(post.visibility)}
+          </Text>
+        </View>
+        {showFollow && post.author ? (
+          <FollowChip following={following} busy={followBusy} onPress={onToggleFollow} />
         ) : null}
       </View>
-
-      {/* Frame 1597881457 — there is no chat screen yet, so it does nothing. */}
-      <Pressable
-        hitSlop={px(8)}
-        style={[styles.row, { position: 'absolute', right: px(chat.right), top: px(chat.top), gap: px(chat.gap) }]}
-      >
-        <SvgXml xml={icons.messageCircle} width={px(chat.icon)} height={px(chat.icon)} />
-        <Text style={[styles.link, { fontSize: px(chat.size), lineHeight: px(chat.height) }]}>Chat</Text>
-      </Pressable>
 
       {post.body ? (
         <Text
           style={[
             styles.body,
-            {
-              marginLeft: px(body.x),
-              marginTop: px(body.gap),
-              width: px(footer.width),
-              fontSize: px(body.size),
-              lineHeight: px(body.height),
-            },
+            { marginTop: px(body.gap), fontSize: px(body.size), lineHeight: px(body.height) },
           ]}
         >
           {post.body}
@@ -279,31 +281,45 @@ export function PostCard({
         style={[
           styles.row,
           styles.footer,
-          { marginLeft: px(footer.x), marginTop: px(footer.gap), width: px(footer.width), height: px(footer.height) },
+          { marginTop: px(actions.gap), minHeight: px(actions.height) },
         ]}
       >
-        <Text style={[styles.date, { fontSize: px(footer.dateSize), lineHeight: px(footer.dateHeight) }]}>
-          {formatDate(post.created_at)}
-        </Text>
-        <View style={[styles.row, { gap: px(actions.gap) }]}>
-          <Pressable onPress={onOpen} hitSlop={px(6)} style={[styles.row, { gap: px(actions.countGap) }]}>
-            <SvgXml xml={icons.chatCircleDots} width={px(actions.icon)} height={px(actions.icon)} />
-            <Text style={[styles.count, { fontSize: px(actions.countSize), lineHeight: px(actions.countHeight) }]}>
-              {commentCount}
-            </Text>
-          </Pressable>
-          <Pressable onPress={toggle} hitSlop={px(6)} style={[styles.row, { gap: px(actions.countGap) }]}>
-            <SvgXml
-              xml={icons.momentThumbsUp}
-              width={px(actions.icon)}
-              height={px(actions.icon)}
-              color={liked ? colors.postButton : colors.momentCount}
-            />
-            <Text style={[styles.count, { fontSize: px(actions.countSize), lineHeight: px(actions.countHeight) }]}>
-              {likeCount}
-            </Text>
-          </Pressable>
-        </View>
+        <Pressable
+          onPress={toggle}
+          accessibilityLabel="Like"
+          style={[styles.row, { minHeight: px(actions.height), gap: px(actions.countGap), paddingRight: px(actions.padX) }]}
+        >
+          <Heart
+            size={px(actions.likeIcon)}
+            color={liked ? colors.feedLike : colors.feedAction}
+            fill={liked ? colors.feedLike : 'none'}
+            strokeWidth={1.9}
+          />
+          <Text style={[styles.count, { fontSize: px(actions.countSize) }]}>{likeCount}</Text>
+        </Pressable>
+        <Pressable
+          onPress={onOpen}
+          accessibilityLabel="Comments"
+          style={[styles.row, { minHeight: px(actions.height), gap: px(actions.countGap), paddingHorizontal: px(actions.padX) }]}
+        >
+          <MessageCircle size={px(actions.commentIcon)} color={colors.feedAction} strokeWidth={1.9} />
+          <Text style={[styles.count, { fontSize: px(actions.countSize) }]}>{commentCount}</Text>
+        </Pressable>
+        <View style={{ flex: 1 }} />
+        <Pressable
+          onPress={onChat}
+          accessibilityLabel="Chat with author"
+          hitSlop={{ top: px(8), bottom: px(8) }}
+          style={[
+            styles.row,
+            styles.pill,
+            styles.chatPill,
+            { height: px(pill.height), paddingHorizontal: px(13), borderRadius: px(pill.height / 2), gap: px(6) },
+          ]}
+        >
+          <MessageSquare size={px(15)} color={colors.feedAccentText} strokeWidth={2} />
+          <Text style={[styles.pillLabel, { fontSize: px(pill.size), color: colors.feedAccentText }]}>Chat</Text>
+        </Pressable>
       </View>
     </Pressable>
   );
@@ -325,7 +341,9 @@ export function FeedPlaceholder({ loaded, empty }: { loaded: boolean; empty: str
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.homeCard,
+    backgroundColor: colors.feedCard,
+    borderWidth: 1,
+    borderColor: colors.feedBorder,
     overflow: 'hidden',
   },
   row: {
@@ -338,28 +356,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   footer: {
-    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: colors.feedDivider,
   },
   name: {
-    fontFamily: typography.fontFamily.medium,
+    fontFamily: typography.fontFamily.semiBold,
     color: colors.white,
   },
-  link: {
-    fontFamily: typography.fontFamily.medium,
-    color: colors.homeAccent,
+  meta: {
+    fontFamily: typography.fontFamily.regular,
+    color: colors.feedMuted,
+  },
+  pill: {
+    borderWidth: 1,
+  },
+  pillLabel: {
+    fontFamily: typography.fontFamily.semiBold,
+  },
+  chatPill: {
+    borderColor: colors.feedChatBorder,
+    backgroundColor: colors.feedChatFill,
   },
   body: {
     fontFamily: typography.fontFamily.regular,
-    color: colors.white,
-  },
-  date: {
-    fontFamily: typography.fontFamily.medium,
-    color: colors.white,
-    opacity: 0.3,
+    color: colors.feedText,
   },
   count: {
-    fontFamily: typography.fontFamily.regular,
-    color: colors.momentCount,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.feedAction,
   },
   placeholder: {
     fontFamily: typography.fontFamily.regular,

@@ -2,7 +2,7 @@ import { StackActions, useNavigation, useRoute, type RouteProp } from '@react-na
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronRight } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, Text, View } from 'react-native';
+import { Alert, Image, Modal, Pressable, Text, TextInput, View } from 'react-native';
 
 import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -15,8 +15,8 @@ import { avatarOf, type ChatUser, type Conversation, ListHeader, nameOf, styles,
 /**
  * Chat Settings — node 514:2763. Follow, Mute and Block are the server's
  * (`/users/{uuid}/follow`, `/conversations/{uuid}/mute`, `/users/{uuid}/block`);
- * Delete leaves the thread. Alias, Pin Chat and Clear Chat History have nothing
- * on the server yet, so they say so instead of pretending.
+ * Delete leaves the thread. Pin Chat, Alias and Clear Chat History are per-person
+ * on the participant row (`/conversations/{uuid}/pin|alias|clear`).
  */
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'ChatSettings'>;
@@ -38,7 +38,9 @@ export default function ChatSettingsScreen() {
   const navigation = useNavigation<Nav>();
   const { uuid, peer } = useRoute<RouteProp<RootStackParamList, 'ChatSettings'>>().params;
   const { token, user } = useAuth();
-  const [state, setState] = useState({ follow: false, mute: false, block: false });
+  const [state, setState] = useState({ follow: false, mute: false, block: false, pin: false });
+  const [alias, setAlias] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const S = SETTINGS;
 
@@ -46,7 +48,11 @@ export default function ChatSettingsScreen() {
   useEffect(() => {
     let live = true;
     api<{ conversation: Conversation }>(`/conversations/${uuid}`, { token })
-      .then(({ conversation }) => live && setState((s) => ({ ...s, mute: conversation.is_muted })))
+      .then(({ conversation }) => {
+        if (!live) return;
+        setState((s) => ({ ...s, mute: conversation.is_muted, pin: conversation.is_pinned }));
+        setAlias(conversation.alias);
+      })
       .catch(() => undefined);
     if (user) {
       api<ChatUser[]>(`/users/${user.uuid}/following?per_page=100`, { token })
@@ -78,12 +84,33 @@ export default function ChatSettingsScreen() {
       run('follow', () => api(`/users/${peer.uuid}/follow`, { method: state.follow ? 'DELETE' : 'POST', token }), { follow: !state.follow });
     } else if (key === 'mute') {
       run('mute', () => api(`/conversations/${uuid}/mute`, { method: 'POST', body: { muted: !state.mute }, token }), { mute: !state.mute });
+    } else if (key === 'pin') {
+      run('pin', () => api(`/conversations/${uuid}/pin`, { method: 'POST', body: { pinned: !state.pin }, token }), { pin: !state.pin });
+    } else if (key === 'alias') {
+      setEditing(alias ?? '');
+    } else if (key === 'clear') {
+      Alert.alert('Clear Chat History', 'Every message so far will be removed from your side. They keep theirs.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Clear', style: 'destructive', onPress: () => run('clear', () => api(`/conversations/${uuid}/clear`, { method: 'POST', token }), {}) },
+      ]);
     } else if (key === 'block') {
       run('block', () => api(`/users/${peer.uuid}/block`, { method: state.block ? 'DELETE' : 'POST', token }), { block: !state.block });
     } else if (key === 'report') {
       navigation.navigate('Report', { userUuid: peer.uuid });
-    } else {
-      Alert.alert(ROWS.find((r) => r.key === key)?.label ?? '', 'Coming soon');
+    }
+  };
+
+  const saveAlias = async () => {
+    const next = (editing ?? '').trim();
+    setEditing(null);
+    setBusy('alias');
+    try {
+      await api(`/conversations/${uuid}/alias`, { method: 'POST', body: { alias: next }, token });
+      setAlias(next === '' ? null : next);
+    } catch (e) {
+      Alert.alert('Alias', e instanceof ApiError ? e.displayMessage : 'Could not save the alias.');
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -104,7 +131,7 @@ export default function ChatSettingsScreen() {
       },
     ]);
 
-  const on = (key: string) => (key === 'follow' ? state.follow : key === 'mute' ? state.mute : key === 'block' ? state.block : false);
+  const on = (key: string) => (key === 'follow' ? state.follow : key === 'mute' ? state.mute : key === 'block' ? state.block : key === 'pin' ? state.pin : false);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.white }}>
@@ -113,7 +140,7 @@ export default function ChatSettingsScreen() {
       <View style={{ position: 'absolute', left: px(S.peer.x), top: px(S.peer.y), width: px(S.peer.width), height: px(S.peer.avatar), flexDirection: 'row', alignItems: 'center' }}>
         <Image source={avatarOf(peer)} style={{ width: px(S.peer.avatar), height: px(S.peer.avatar), borderRadius: px(S.peer.avatar / 2) }} />
         <Text numberOfLines={1} style={[styles.regular, { flex: 1, marginLeft: px(S.peer.gap), fontSize: px(S.peer.size), lineHeight: px(25) }]}>
-          {nameOf(peer)}
+          {alias ?? nameOf(peer)}
         </Text>
         <ChevronRight size={px(S.chevron)} color={colors.black} strokeWidth={2.5} />
       </View>
@@ -134,6 +161,11 @@ export default function ChatSettingsScreen() {
           }}
         >
           <Text style={[styles.regular, { fontSize: px(S.list.size), lineHeight: px(25) }]}>{r.label}</Text>
+          {r.key === 'alias' && alias ? (
+            <Text numberOfLines={1} style={[styles.regular, { flex: 1, textAlign: 'right', marginRight: px(6), fontSize: px(16), color: '#8A8A8A' }]}>
+              {alias}
+            </Text>
+          ) : null}
           {r.toggle ? (
             <Toggle on={on(r.key)} disabled={busy === r.key} onPress={() => press(r.key)} />
           ) : (
@@ -145,6 +177,30 @@ export default function ChatSettingsScreen() {
       <Pressable onPress={remove} hitSlop={px(10)} style={{ position: 'absolute', left: 0, right: 0, bottom: px(S.delete.bottom), alignItems: 'center' }}>
         <Text style={[styles.regular, { fontSize: px(S.delete.size), lineHeight: px(25), color: S.delete.color }]}>Delete</Text>
       </Pressable>
+
+      <Modal visible={editing !== null} transparent animationType="fade" onRequestClose={() => setEditing(null)}>
+        <Pressable onPress={() => setEditing(null)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: px(32) }}>
+          <Pressable style={{ backgroundColor: colors.white, borderRadius: px(16), padding: px(20) }}>
+            <Text style={[styles.medium, { fontSize: px(18), marginBottom: px(12) }]}>Alias for {nameOf(peer)}</Text>
+            <TextInput
+              value={editing ?? ''}
+              onChangeText={setEditing}
+              placeholder="Nickname (only you see it)"
+              maxLength={50}
+              autoFocus
+              style={[styles.regular, { fontSize: px(16), borderBottomWidth: 1, borderColor: '#D0D0D0', paddingVertical: px(8) }]}
+            />
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: px(20), gap: px(24) }}>
+              <Pressable onPress={() => setEditing(null)} hitSlop={px(8)}>
+                <Text style={[styles.regular, { fontSize: px(16) }]}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={saveAlias} hitSlop={px(8)}>
+                <Text style={[styles.medium, { fontSize: px(16), color: '#005DE9' }]}>Save</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }

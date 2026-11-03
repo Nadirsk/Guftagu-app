@@ -70,7 +70,7 @@ export const SETTINGS = {
   header: { x: 17, y: 78, width: 252, back: 24, size: 18 },
   peer: { x: 21, y: 160, width: 357, avatar: 63, gap: 14, size: 20 },
   list: { x: 21, y: 258, width: 359, size: 20 },
-  toggle: { width: 69, height: 33 },
+  toggle: { width: 50, height: 30 },
   chevron: 24,
   /** "Delete", 61px off the bottom edge. */
   delete: { bottom: 61, size: 20, color: '#EF1616' },

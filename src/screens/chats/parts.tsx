@@ -29,6 +29,8 @@ export type ChatMessage = {
   type: 'text' | 'image' | 'audio' | 'video' | 'gift' | 'system';
   body: string | null;
   media_url: string | null;
+  /** A gift card's `{ name, thumbnail_url, quantity, coin_value }`. */
+  media_meta?: { name?: string; thumbnail_url?: string | null; quantity?: number; coin_value?: number; duration_ms?: number } | null;
   is_deleted: boolean;
   status: 'sent' | 'delivered' | 'read' | null;
   created_at: string | null;
@@ -45,6 +47,8 @@ export type Conversation = {
   last_message_at: string | null;
   unread_count: number;
   is_muted: boolean;
+  is_pinned: boolean;
+  alias: string | null;
 };
 
 export const nameOf = (u: { display_name: string | null } | null | undefined) => u?.display_name ?? 'Guftagu user';
@@ -172,11 +176,28 @@ export function EmptyState({ x, y, size, label, labelSize }: { x: number; y: num
 }
 
 /** Frame 1597881516 — the grey switch; on, it turns the thread's blue. */
+/** Narrower than Figma's 69×33 pill, which read as oversized beside the 20px row labels. */
+const TOGGLE = { width: 50, height: 30 };
+
 export function Toggle({ on, onPress, disabled }: { on: boolean; onPress: () => void; disabled?: boolean }) {
   const { px } = useDesignScale();
   return (
-    <Pressable onPress={onPress} disabled={disabled} hitSlop={px(6)} style={{ opacity: disabled ? 0.5 : 1 }}>
-      <SvgXml xml={on ? icons.toggleOn : icons.toggleOff} width={px(69)} height={px(33)} />
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      hitSlop={px(8)}
+      style={{
+        width: px(TOGGLE.width),
+        height: px(TOGGLE.height),
+        borderRadius: px(TOGGLE.height / 2),
+        padding: px(3),
+        justifyContent: 'center',
+        alignItems: on ? 'flex-end' : 'flex-start',
+        backgroundColor: on ? '#005DE9' : 'rgba(0,0,0,0.14)',
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <View style={{ width: px(TOGGLE.height - 6), height: px(TOGGLE.height - 6), borderRadius: px(TOGGLE.height), backgroundColor: colors.white }} />
     </Pressable>
   );
 }

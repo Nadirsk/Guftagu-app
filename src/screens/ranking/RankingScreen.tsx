@@ -192,7 +192,7 @@ function Row({ entry, y }: { entry: RankingEntry; y: number }) {
       <Label cx={R.rankCx} y={y + R.rankDy} size={21} lineHeight={31.5} width={44}>
         {entry.rank}
       </Label>
-      <Avatar uri={entry.avatar_url} box={{ ...R.avatar, y: y + R.avatar.y }} />
+      <Avatar uri={entry.avatar_url} seed={entry.entity_id} box={{ ...R.avatar, y: y + R.avatar.y }} />
       <Label x={R.nameX} y={y + R.nameDy} size={21} lineHeight={31.5} weight="medium" width={R.nameW}>
         {entry.display_name ?? ''}
       </Label>

@@ -24,26 +24,38 @@ import { colors } from '../theme/tokens';
  * Party is the rooms list (Create Room is its "Create My Room" card). Chats is
  * the DM list and Contacts (514:3077 / 519:2450). Mine is the Profile.
  */
-const SCREENS: Partial<Record<NavKey, () => React.ReactElement>> = {
-  Home: () => <HomeFeedScreen />,
-  Party: () => <PartyScreen />,
+const SCREENS: Partial<Record<NavKey, (go: { openExplore: () => void; exploreFirst: boolean }) => React.ReactElement>> = {
+  Home: ({ openExplore }) => <HomeFeedScreen onOpenExplore={openExplore} />,
+  Party: ({ exploreFirst }) => <PartyScreen initialSection={exploreFirst ? 'Explore' : 'Related'} />,
   Chats: () => <ChatsScreen />,
   Mine: () => <ProfileScreen />,
 };
 
 export default function TabShell() {
   const [active, setActive] = useState<NavKey>('Home');
+  // Set when Party was reached from the Live card, so it opens on Explore; the bar's own Party tap opens Related.
+  const [exploreFirst, setExploreFirst] = useState(false);
   const render = SCREENS[active];
 
   return (
     <View style={styles.shell}>
-      {render ? render() : null}
+      {render
+        ? render({
+            exploreFirst,
+            openExplore: () => {
+              setExploreFirst(true);
+              setActive('Party');
+            },
+          })
+        : null}
       <BottomNav
         active={active}
         // The Party and Chats frames draw the bar white (687:6916, 687:7071); the dark home keeps its own.
         tone={active === 'Party' || active === 'Chats' ? 'light' : 'dark'}
         onSelect={(key) => {
-          if (SCREENS[key]) setActive(key);
+          if (!SCREENS[key]) return;
+          setExploreFirst(false);
+          setActive(key);
         }}
       />
     </View>

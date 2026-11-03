@@ -55,6 +55,7 @@ export type RoomSnapshot = {
     muted: boolean;
     camera_on: boolean;
     can_take_seat: boolean;
+    follows_owner?: boolean;
     /** Only on the join response — what plays for your own arrival. */
     arrival?: Arrival | null;
   };

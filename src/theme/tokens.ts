@@ -33,6 +33,21 @@ export const colors = {
   homeOnline: '#24AE15', // "2344" in "2344 Active Now"
   homeBadge: '#BF0C0C', // the bell's unread count
   homeJoin: '#2F88EE', // Family "Join"
+  // Home feed card ("Home Feed Redesign").
+  feedCard: '#151518',
+  feedBorder: 'rgba(255,255,255,0.07)',
+  feedDivider: 'rgba(255,255,255,0.06)',
+  feedRing: 'rgba(61,139,255,0.55)', // avatar ring
+  feedText: '#E4E4E8', // caption
+  feedMuted: '#9A9AA2', // "2h ago · Public"
+  feedAction: '#B4B4BC', // like / comment icons and counts
+  feedAccent: '#1A66F2', // Follow pill fill
+  feedAccentText: '#6AA8FF', // Chat pill label and icon
+  feedChatBorder: 'rgba(61,139,255,0.45)',
+  feedChatFill: 'rgba(61,139,255,0.10)',
+  feedPillBorder: 'rgba(255,255,255,0.22)', // "Following" outline
+  feedFollowing: '#C8C8CF',
+  feedLike: '#FF5A4D',
   navBorder: 'rgba(248,248,248,0.38)', // bottom bar outline (687:6679)
   // Daily Rewards popup (483:2995).
   rewardScrim: 'rgba(0,0,0,0.49)', // Rectangle 161124107

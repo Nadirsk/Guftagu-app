@@ -35,7 +35,8 @@ export const art = {
   // Same bitmaps as Weekly Star's tiles and coin stack.
   tile: require('../../assets/weekly-star/item-tile.png'),
   coins: require('../../assets/weekly-star/reward-coins.png'),
-  avatar: require('../../assets/avatar-placeholder.png'),
+  avatarMale: require('../../assets/avatar-male.png'),
+  avatarFemale: require('../../assets/avatar-female.png'),
 };
 
 /** 517.17K / 458.10K — two decimals, kept, as every Figma sample shows them. */
@@ -77,15 +78,19 @@ export function secondsToWeekEnd(now = new Date()) {
 }
 
 /** A circular (or, for 71x62, elliptical) photo, falling back to the placeholder. */
-export function Avatar({ uri, box }: { uri: string | null | undefined; box: Box }) {
+export function Avatar({
+  uri,
+  box,
+  seed,
+}: {
+  uri: string | null | undefined;
+  box: Box;
+  /** Picks the default avatar when there is no photo — the same alternation the server uses. */
+  seed?: number;
+}) {
   const abs = useBox();
-  return (
-    <Image
-      source={uri ? { uri } : art.avatar}
-      resizeMode="cover"
-      style={[abs(box), { borderRadius: '50%' }]}
-    />
-  );
+  const fallback = (seed ?? 0) % 2 === 0 ? art.avatarFemale : art.avatarMale;
+  return <Image source={uri ? { uri } : fallback} resizeMode="cover" style={[abs(box), { borderRadius: '50%' }]} />;
 }
 
 /**
@@ -109,7 +114,7 @@ export function Podium({
     <>
       {spec.map((spot, i) => {
         const e = entries[i];
-        const avatar = <Avatar key={`a${i}`} uri={e?.avatar_url} box={spot.avatar} />;
+        const avatar = <Avatar key={`a${i}`} uri={e?.avatar_url} box={spot.avatar} seed={e?.entity_id} />;
         const { x, y } = spot.info;
         return [
           spot.frameCrop ? (

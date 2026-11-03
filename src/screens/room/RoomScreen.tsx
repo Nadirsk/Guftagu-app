@@ -106,6 +106,12 @@ type SeatMode = 'kick' | 'mute' | 'lock' | null;
  * Expo Go does not ship, so the mic button changes your mute state on the seat
  * but nothing is sent or played yet.
  */
+/**
+ * The Menu and Lucky Wheel sit this much lower than Figma draws them, so the pair rests just above
+ * the bottom bar's games button (about 10px clear) instead of floating far above it.
+ */
+const SIDE_DOWN = 55;
+
 export default function RoomScreen() {
   const { px, ratio } = useDesignScale();
   const { height } = useWindowDimensions();
@@ -306,7 +312,8 @@ export default function RoomScreen() {
   const rows = useMemo(() => chatRows(chatTab, room.messages, room.gifts), [chatTab, room.messages, room.gifts]);
   const chatScroll = useRef<ScrollViewInstance>(null);
 
-  const showHeart = snapshot?.owner && snapshot.owner.uuid !== me?.uuid && !followed;
+  const showHeart =
+    snapshot?.owner && snapshot.owner.uuid !== me?.uuid && !followed && !snapshot.my.follows_owner;
   const notice = snapshot?.room.announcement?.trim() || DEFAULT_NOTICE;
   const theme = snapshot?.room.background_url ?? snapshot?.room.theme?.background_url;
 
@@ -425,11 +432,11 @@ export default function RoomScreen() {
       <Pressable
         onPress={() => setOverlay({ kind: 'tools' })}
         hitSlop={px(6)}
-        style={{ position: 'absolute', right: px(12 + 20 - 2 - SIDE.menu.size / 2), top: px(SIDE.menu.y + extra - 40), width: px(SIDE.menu.size), height: px(SIDE.menu.size) }}
+        style={{ position: 'absolute', right: px(12 + 20 - 2 - SIDE.menu.size / 2), top: px(SIDE.menu.y + extra - 40 + SIDE_DOWN), width: px(SIDE.menu.size), height: px(SIDE.menu.size) }}
       >
         <SvgXml xml={icons.menu} width={px(SIDE.menu.svg.size)} height={px(SIDE.menu.svg.size)} style={{ position: 'absolute', left: px(SIDE.menu.svg.dx), top: px(SIDE.menu.svg.dy) }} />
       </Pressable>
-      <Pressable onPress={() => setOverlay({ kind: 'wheel' })} style={{ position: 'absolute', right: px(12 + 20 - 40), top: px(SIDE.wheel.y + extra - 40), width: px(80), alignItems: 'center' }}>
+      <Pressable onPress={() => setOverlay({ kind: 'wheel' })} style={{ position: 'absolute', right: px(12 + 20 - 40), top: px(SIDE.wheel.y + extra - 40 + SIDE_DOWN), width: px(80), alignItems: 'center' }}>
         <Image source={require('../../assets/room/lucky-wheel.png')} resizeMode="cover" style={{ width: px(SIDE.wheel.size), height: px(SIDE.wheel.size) }} />
         <Text numberOfLines={1} style={[styles.regular, { marginTop: px(2), textAlign: 'center', fontSize: px(SIDE.wheel.label.size), color: colors.white }]}>Lucky Wheel</Text>
       </Pressable>

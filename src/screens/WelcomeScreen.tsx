@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronRight, EarthLock, MailMinus } from 'lucide-react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ApiError } from '../api/client';
 import { useSocialSignIn } from '../auth/social';
@@ -43,7 +43,7 @@ export default function WelcomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { signIn, busy } = useSocialSignIn();
   const { t, i18n } = useTranslation();
-  const { px } = useDesignScale();
+  const { px, ratio } = useDesignScale();
   const [languageOpen, setLanguageOpen] = useState(false);
 
   // One handler for both providers — they differ only in which token the SDK
@@ -77,7 +77,14 @@ export default function WelcomeScreen() {
       <Image
         source={background}
         resizeMode="cover"
-        style={abs(D.background.x, D.background.y, D.background.width, D.background.height)}
+        style={abs(
+          D.background.x,
+          D.background.y,
+          D.background.width,
+          // Figma's picture ends at 882, which on a taller phone (or under the gesture bar) leaves a
+          // strip at the bottom: let it run to the bottom of the whole screen.
+          Math.max(D.background.height, Dimensions.get('screen').height / ratio - D.background.y),
+        )}
       />
       <LinearGradient
         pointerEvents="none"

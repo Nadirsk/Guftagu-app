@@ -133,9 +133,13 @@ export const PODIUM_INFO = {
   scoreW: 46,
 };
 
-/** Group 1597881056 on the ranking pages. */
+/**
+ * Group 1597881056 on the ranking pages. Top 1's info sits 16px lower than
+ * Figma's y=347: the name used to run into the bottom of the "TOP 1" plate and
+ * its gem (which end at about y=359), so it now starts on the red banner below.
+ */
 export const PODIUM_PAGE: PodiumSpec = [
-  { frame: { x: 68, y: 194, w: 270, h: 240 }, avatar: { x: 172, y: 255, w: 62, h: 62 }, info: { x: 175, y: 347 }, avatarOnTop: true },
+  { frame: { x: 68, y: 194, w: 270, h: 240 }, avatar: { x: 172, y: 255, w: 62, h: 62 }, info: { x: 175, y: 363 }, avatarOnTop: true },
   { frame: { x: 19, y: 450, w: 167, h: 214 }, avatar: { x: 68, y: 483, w: 71, h: 62 }, info: { x: 73, y: 579 }, avatarOnTop: true },
   { frame: { x: 217, y: 450, w: 167, h: 214 }, avatar: { x: 265, y: 486, w: 71, h: 62 }, info: { x: 271, y: 584 }, avatarOnTop: false },
 ];

@@ -1,6 +1,17 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  Animated,
+  Easing,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type TextStyle,
+} from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
 import * as icons from '../../assets/home/icons';
@@ -24,20 +35,248 @@ const art = {
   bell: require('../../assets/home/bell.png'),
   matchPill: require('../../assets/home/match-pill.png'),
   matchAvatar: require('../../assets/home/match-avatar.png'),
-  // Figma points the top and lower-left portraits at the same bitmap.
+  // The floating portraits are always the default avatars, never photos.
   avatars: [
-    require('../../assets/home/header-avatar-2.png'),
-    require('../../assets/home/header-avatar-1.png'),
-    require('../../assets/home/header-avatar-2.png'),
+    require('../../assets/avatar-female.png'),
+    require('../../assets/avatar-male.png'),
+    require('../../assets/avatar-female.png'),
   ],
 };
 
-const SAMPLE = { unread: 2, online: 2344, matching: 6, avatarName: 'aSIF' };
+const SAMPLE = { unread: 2, matching: 6 };
 
-export function HomeHeader() {
+const SHOW_MATCHING_PILL = false;
+
+/** Loops a 0→1→0 sine-eased value, starting after `delay`. Returns a cleanup. */
+function startSway(value: Animated.Value, duration: number, delay = 0) {
+  const loop = Animated.loop(
+    Animated.sequence([
+      Animated.timing(value, {
+        toValue: 1,
+        duration,
+        easing: Easing.inOut(Easing.sin),
+        useNativeDriver: true,
+      }),
+      Animated.timing(value, {
+        toValue: 0,
+        duration,
+        easing: Easing.inOut(Easing.sin),
+        useNativeDriver: true,
+      }),
+    ]),
+  );
+  const timer = setTimeout(() => loop.start(), delay);
+  return () => {
+    clearTimeout(timer);
+    loop.stop();
+  };
+}
+
+/**
+ * A portrait that springs in with a little spin, then drifts on a lazy
+ * figure-eight (x and y run on different periods), tilts with the drift and
+ * sends out a soft ripple ring like a "live" beacon. Every index has its own
+ * timing so the three never move in lockstep.
+ */
+function FloatingAvatar({
+  index,
+  left,
+  top,
+  width,
+  children,
+}: {
+  index: number;
+  left: number;
+  top: number;
+  width: number;
+  children: ReactNode;
+}) {
+  const enter = useRef(new Animated.Value(0)).current;
+  const driftX = useRef(new Animated.Value(0)).current;
+  const driftY = useRef(new Animated.Value(0)).current;
+  const ripple = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const entry = Animated.spring(enter, {
+      toValue: 1,
+      delay: 150 + index * 180,
+      friction: 5,
+      tension: 70,
+      useNativeDriver: true,
+    });
+    entry.start();
+
+    const rippleLoop = Animated.loop(
+      Animated.timing(ripple, {
+        toValue: 1,
+        duration: 2400,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    );
+    const rippleTimer = setTimeout(() => rippleLoop.start(), 600 + index * 800);
+
+    const stopX = startSway(driftX, 3200 + index * 550, index * 350);
+    const stopY = startSway(driftY, 2300 + index * 400, index * 200);
+    return () => {
+      entry.stop();
+      clearTimeout(rippleTimer);
+      rippleLoop.stop();
+      stopX();
+      stopY();
+    };
+  }, [enter, driftX, driftY, ripple, index]);
+
+  const dir = index % 2 === 0 ? 1 : -1;
+  const translateX = driftX.interpolate({ inputRange: [0, 1], outputRange: [-4 * dir, 4 * dir] });
+  const translateY = driftY.interpolate({ inputRange: [0, 1], outputRange: [3, -7] });
+  const tilt = driftX.interpolate({ inputRange: [0, 1], outputRange: ['-3deg', '3deg'] });
+  const spin = enter.interpolate({ inputRange: [0, 1], outputRange: [`${-25 * dir}deg`, '0deg'] });
+  const popScale = enter.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] });
+  const breathe = driftY.interpolate({ inputRange: [0, 1], outputRange: [1, 1.05] });
+
+  const ringScale = ripple.interpolate({ inputRange: [0, 1], outputRange: [1, 1.7] });
+  const ringOpacity = ripple.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.55, 0] });
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        left,
+        top,
+        width,
+        opacity: enter,
+        transform: [
+          { translateX },
+          { translateY },
+          { rotate: tilt },
+          { rotate: spin },
+          { scale: Animated.multiply(popScale, breathe) },
+        ],
+      }}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width,
+          height: width,
+          borderRadius: width / 2,
+          borderWidth: 2,
+          borderColor: colors.homeOnline,
+          opacity: ringOpacity,
+          transform: [{ scale: ringScale }],
+        }}
+      />
+      {children}
+    </Animated.View>
+  );
+}
+
+/** Counts up from zero to `value` on mount. */
+function CountUp({ value, style }: { value: number; style: StyleProp<TextStyle> }) {
+  const [shown, setShown] = useState(0);
+  const from = useRef(0);
+
+  // Each new value counts on from wherever the last one stopped, so a refresh
+  // from the server nudges the number instead of replaying the whole count-up.
+  useEffect(() => {
+    const start = from.current;
+    const progress = new Animated.Value(0);
+    const id = progress.addListener(({ value: v }) => {
+      const next = Math.round(start + (value - start) * v);
+      from.current = next;
+      setShown(next);
+    });
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: start === 0 ? 1600 : 700,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+    return () => progress.removeListener(id);
+  }, [value]);
+
+  return <Text style={style}>{shown}</Text>;
+}
+
+/** A green dot with an expanding halo — "people are online right now". */
+function PulseDot({ size }: { size: number }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(pulse, {
+        toValue: 1,
+        duration: 1500,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  return (
+    <View style={{ width: size, height: size }}>
+      <Animated.View
+        style={{
+          position: 'absolute',
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: colors.homeOnline,
+          opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] }),
+          transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2.8] }) }],
+        }}
+      />
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: colors.homeOnline,
+        }}
+      />
+    </View>
+  );
+}
+
+/** Rocks the bell every few seconds, like a notification just arrived. */
+function useBellRing() {
+  const ring = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const shake = Animated.sequence([
+      Animated.delay(1200),
+      ...[1, -0.8, 0.6, -0.4, 0].map((toValue) =>
+        Animated.timing(ring, { toValue, duration: 110, useNativeDriver: true }),
+      ),
+      Animated.delay(3500),
+    ]);
+    const loop = Animated.loop(shake);
+    loop.start();
+    return () => loop.stop();
+  }, [ring]);
+
+  return ring.interpolate({ inputRange: [-1, 1], outputRange: ['-14deg', '14deg'] });
+}
+
+export function HomeHeader({
+  online = 0,
+  rankingFaces,
+  weeklyStarFaces,
+}: {
+  online?: number;
+  rankingFaces?: (string | undefined)[];
+  weeklyStarFaces?: (string | undefined)[];
+}) {
   const { px } = useDesignScale();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { background, title, avatar, bell, activeNow } = HEADER;
+  const bellRotate = useBellRing();
 
   return (
     <>
@@ -64,31 +303,16 @@ export function HomeHeader() {
       </Text>
 
       {HEADER.avatars.map((at, index) => (
-        <View
-          key={index}
-          style={{ position: 'absolute', left: px(at.x), top: px(at.y), width: px(avatar.size) }}
-        >
+        <FloatingAvatar key={index} index={index} left={px(at.x)} top={px(at.y)} width={px(avatar.size)}>
           <Image
             source={art.avatars[index]}
             style={{ width: px(avatar.size), height: px(avatar.size) }}
           />
-          <Text
-            numberOfLines={1}
-            style={[
-              styles.avatarName,
-              {
-                marginTop: px(avatar.labelTop - avatar.size),
-                fontSize: px(avatar.labelSize),
-                lineHeight: px(avatar.labelHeight),
-              },
-            ]}
-          >
-            {SAMPLE.avatarName}
-          </Text>
-        </View>
+        </FloatingAvatar>
       ))}
 
-      <MatchingPill />
+      {/* "Matching with you" pill is hidden until it's asked for. */}
+      {SHOW_MATCHING_PILL ? <MatchingPill /> : null}
 
       {/* Ellipse 1990 — a blurred white disc behind the bell. */}
       <View
@@ -106,11 +330,12 @@ export function HomeHeader() {
           height: px(bell.image.height),
         }}
       >
-        <View
+        <Animated.View
           style={{
             width: px(bell.image.width),
             height: px(bell.image.height),
             overflow: 'hidden',
+            transform: [{ rotate: bellRotate }],
           }}
         >
           <Image
@@ -123,7 +348,7 @@ export function HomeHeader() {
               height: px(bell.image.scaledHeight),
             }}
           />
-        </View>
+        </Animated.View>
         <View
           style={[
             styles.badge,
@@ -143,14 +368,14 @@ export function HomeHeader() {
       </Pressable>
 
       <View style={[styles.activeNow, { top: px(activeNow.y), gap: px(activeNow.gap) }]}>
-        <Text
+        <PulseDot size={px(7)} />
+        <CountUp
+          value={online}
           style={[
             styles.activeNowLabel,
             { color: colors.homeOnline, fontSize: px(activeNow.size), lineHeight: px(activeNow.height) },
           ]}
-        >
-          {SAMPLE.online}
-        </Text>
+        />
         <Text
           style={[
             styles.activeNowLabel,
@@ -161,8 +386,8 @@ export function HomeHeader() {
         </Text>
       </View>
 
-      <TrioBanner spec={BANNER_LEFT} onPress={() => navigation.navigate('Ranking')} />
-      <TrioBanner spec={BANNER_RIGHT} onPress={() => navigation.navigate('WeeklyStar')} />
+      <TrioBanner spec={BANNER_LEFT} faces={rankingFaces} onPress={() => navigation.navigate('Ranking')} />
+      <TrioBanner spec={BANNER_RIGHT} faces={weeklyStarFaces} onPress={() => navigation.navigate('WeeklyStar')} />
       <TrioBanner spec={BANNER_WIDE} />
     </>
   );
@@ -325,11 +550,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     fontFamily: typography.fontFamily.medium,
     color: colors.white,
-  },
-  avatarName: {
-    fontFamily: typography.fontFamily.medium,
-    color: colors.white,
-    textAlign: 'center',
   },
   badge: {
     position: 'absolute',

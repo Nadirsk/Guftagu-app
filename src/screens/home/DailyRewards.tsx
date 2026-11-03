@@ -11,25 +11,62 @@ import { REWARDS } from './geometry';
  *
  * Drawn inside the home screen rather than as a native Modal: Figma keeps the
  * bottom bar above the scrim, and TabShell draws the bar above every screen.
- * There is no rewards API yet, so the six rewards are the frame's own and the
- * first is the one on offer; Collect only dismisses it for the day.
+ * The week comes from GET /checkin, i.e. whatever the admin panel's Daily rewards
+ * page defines: coins, diamonds, or a store item (frame, entry effect...).
  */
 
 const art = {
   ribbon: require('../../assets/home/rewards-ribbon.png'),
   coins: require('../../assets/home/reward-coins.png'),
   coin: require('../../assets/home/reward-coin.png'),
+  diamonds: require('../../assets/home/reward-diamonds.png'),
+  diamond: require('../../assets/home/reward-diamond.png'),
 };
+
+/** Coins and diamonds use bundled art; every cosmetic shows the image the Store item carries. */
+const artOf = (d: CheckinDay) => {
+  if (d.status === 'unavailable') return null;
+  if (d.item) return d.item.image_url ? { uri: d.item.image_url } : null;
+  return d.reward_type === 'diamonds' ? art.diamonds : art.coins;
+};
+
+const TYPE_NAMES: Record<string, string> = {
+  frame: 'Frame',
+  bubble: 'Chat Bubble',
+  entrance_effect: 'Entry effect',
+  entry_banner: 'Entry banner',
+  profile_card: 'Profile card',
+  mic_wave: 'Mic wave',
+  room_background: 'Room bg',
+  floating_screen: 'Floating screen',
+};
+
+export type CheckinItem = { id: number; type: string; name: string; image_url: string | null };
 
 export type CheckinDay = {
   day: number;
   reward_type: string | null;
   reward_value: number | null;
+  duration_days?: number | null;
+  /** Set when the day pays a store item (frame, entry effect...) instead of currency. */
+  item?: CheckinItem | null;
   status: 'claimed' | 'today' | 'locked' | 'unavailable';
 };
 
-const unitOf = (type: string | null) => (type === 'diamonds' ? 'diamonds' : 'coins');
-const labelOf = (d: CheckinDay) => (d.reward_value == null ? 'Reward' : `${d.reward_value} ${unitOf(d.reward_type)}`);
+const unitOf = (type: string | null) => (type === 'diamonds' ? 'Diamond' : 'coins');
+const spanOf = (days?: number | null) => (days ? `${days}d` : 'Forever');
+
+const labelOf = (d: CheckinDay) => {
+  if (d.status === 'unavailable') return 'Coming soon';
+  if (d.item) return `${TYPE_NAMES[d.item.type] ?? d.item.name}${d.duration_days ? ` ${d.duration_days}d` : ''}`;
+  return d.reward_value == null ? 'Reward' : `${d.reward_value} ${unitOf(d.reward_type)}`;
+};
+
+type Won = { reward_type: string; reward_value: number; duration_days?: number | null; item?: CheckinItem | null };
+const wonText = (w: Won) => {
+  if (w.item) return `${w.item.name} · ${spanOf(w.duration_days)}`;
+  return `+${w.reward_value} ${unitOf(w.reward_type)}`;
+};
 
 /** Coins that fly out of the Collect button when the reward is taken. */
 function CoinBurst({ run, size }: { run: number; size: number }) {
@@ -75,13 +112,13 @@ export default function DailyRewards({
 }: {
   week: CheckinDay[];
   /** Resolves with the reward just paid, or null when the claim failed. */
-  onClaim: () => Promise<{ reward_type: string; reward_value: number } | null>;
+  onClaim: () => Promise<Won | null>;
   onClose: () => void;
 }) {
   const { px } = useDesignScale();
   const [days, setDays] = useState(week);
   const [busy, setBusy] = useState(false);
-  const [won, setWon] = useState<{ reward_type: string; reward_value: number } | null>(null);
+  const [won, setWon] = useState<Won | null>(null);
   const [burst, setBurst] = useState(0);
   const pop = useRef(new Animated.Value(0)).current;
   const claimed = days.every((x) => x.status !== 'today');
@@ -198,15 +235,33 @@ export default function DailyRewards({
                     overflow: 'hidden',
                   }}
                 >
-                  <Image
-                    source={art.coins}
-                    style={{ position: 'absolute', left: px(tile.coins.imageX), width: px(tile.coins.imageWidth), height: px(tile.coins.height) }}
-                  />
+                  {(() => {
+                    const source = artOf(reward);
+                    if (!source) return null;
+                    const isCoins = source === art.coins;
+                    return (
+                      <Image
+                        source={source}
+                        resizeMode="contain"
+                        style={
+                          isCoins
+                            ? { position: 'absolute', left: px(tile.coins.imageX), width: px(tile.coins.imageWidth), height: px(tile.coins.height) }
+                            : { position: 'absolute', left: px(tile.coins.width * 0.1), top: px(-8), width: px(tile.coins.width * 0.8), height: px(tile.coins.height + 14) }
+                        }
+                      />
+                    );
+                  })()}
                 </View>
                 <View style={[styles.band, { left: px(tile.band.x), top: px(tile.band.y), width: px(width), height: px(tile.band.height) }]} />
                 <View style={[styles.label, { top: px(tile.label.y), gap: px(tile.label.gap) }]}>
-                  <Image source={art.coin} style={{ width: px(tile.label.coin), height: px(tile.label.coin) }} />
-                  <Text numberOfLines={1} style={[styles.labelText, { fontSize: px(tile.label.size), lineHeight: px(tile.label.height) }]}>
+                  {reward.item || reward.status === 'unavailable' ? null : (
+                    <Image
+                      source={reward.reward_type === 'diamonds' ? art.diamond : art.coin}
+                      resizeMode="contain"
+                      style={{ width: px(tile.label.coin), height: px(tile.label.coin) }}
+                    />
+                  )}
+                  <Text numberOfLines={1} style={[styles.labelText, { fontSize: px(reward.reward_type === 'diamonds' ? tile.label.size - 1 : tile.label.size), lineHeight: px(tile.label.height) }]}>
                     {labelOf(reward)}
                   </Text>
                 </View>
@@ -261,9 +316,15 @@ export default function DailyRewards({
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(6), paddingHorizontal: px(16), paddingVertical: px(6), borderRadius: px(20), backgroundColor: colors.rewardOrange }}>
-                <Image source={art.coin} style={{ width: px(20), height: px(20) }} />
+                {won.item ? null : (
+                  <Image
+                    source={won.reward_type === 'diamonds' ? art.diamond : art.coin}
+                    resizeMode="contain"
+                    style={{ width: px(20), height: px(20) }}
+                  />
+                )}
                 <Text style={{ fontFamily: typography.fontFamily.medium, fontSize: px(18), color: colors.white }}>
-                  +{won.reward_value} {unitOf(won.reward_type)}
+                  {wonText(won)}
                 </Text>
               </View>
             </Animated.View>

@@ -89,20 +89,17 @@ export const POST = {
   x: 17,
   y: 672,
   width: 369,
-  gap: 20, // 672 + 378 → 1070
-  radius: 10,
-  paddingTop: 25,
-  paddingBottom: 19,
-  author: { x: 19, avatar: 54, gap: 11, nameSize: 18, nameHeight: 23 },
-  /** Ellipse 1991 + "Follow" — straight after the name. */
-  follow: { gap: 6, dot: 4, dotGap: 4, size: 16, height: 20 },
-  /** Frame 1597881457 — right-aligned, 16px in from the card edge. */
-  chat: { right: 16, top: 41.5, icon: 21, gap: 7, size: 15, height: 19 },
-  /** One attachment is Figma's frame; several are a 3-across grid of squares. */
-  media: { x: 25, gap: 22, width: 247, height: 213, radius: 13, columns: 3, gridGap: 8, tileRadius: 8 },
-  body: { x: 25, gap: 22, size: 15, height: 21 },
-  footer: { x: 25, gap: 21, width: 316, height: 24, dateSize: 15, dateHeight: 19 },
-  actions: { gap: 17, icon: 24, countGap: 5, countSize: 13, countHeight: 16 },
+  gap: 12,
+  radius: 22,
+  pad: 14,
+  padBottom: 4,
+  author: { avatar: 44, gap: 12, ring: 3.5, nameSize: 15, nameHeight: 21, metaSize: 12, metaHeight: 17 },
+  /** The Follow and Chat pills: 32 tall, with a taller hit area. */
+  pill: { height: 32, paddingX: 14, size: 13 },
+  /** One attachment is a full-width photo; several are a 3-across grid of squares. */
+  media: { gap: 12, height: 210, radius: 16, columns: 3, gridGap: 6, tileRadius: 12 },
+  body: { gap: 8, size: 15, height: 23 },
+  actions: { gap: 8, height: 48, padX: 12, likeIcon: 22, commentIcon: 21, countGap: 7, countSize: 13 },
 } as const;
 
 /** The Live tab's single card (Frame 1597881186). */

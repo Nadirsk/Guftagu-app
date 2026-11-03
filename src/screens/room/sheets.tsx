@@ -490,7 +490,10 @@ export function GiftSheet({
   onMic,
   onClose,
   onSend,
+  dm,
 }: {
+  /** A one-to-one chat: the one face is the person in the thread, with no seat badge and no ALL. */
+  dm?: boolean;
   receiver: RoomUser | 'all' | null;
   /** Everyone on a mic, with the seat they are on — the faces along the top. */
   onMic: { seat: number; user: RoomUser }[];
@@ -514,6 +517,8 @@ export function GiftSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const g = GIFTS;
+  // In a chat there is no row of faces to pick from, so everything under it moves up.
+  const off = dm ? g.tabs.y - g.faces.y - 6 : 0;
 
   useEffect(() => {
     api<Gift[]>('/gifts', { token }).then(setGifts).catch(() => setGifts([]));
@@ -525,7 +530,8 @@ export function GiftSheet({
   const activeCategory = category ?? categories[0]?.id ?? null;
   const shown = useMemo(() => (gifts ?? []).filter((x) => activeCategory === null || x.category_id === activeCategory), [gifts, activeCategory]);
   const tabs = categories.map((c) => ({ id: c.id as number | null, label: c.name_en ?? c.name ?? '' }));
-  const chosen = shown.find((x) => x.id === selected) ?? null;
+  // As in Mazag's chat, the first gift is already picked when the sheet opens.
+  const chosen = shown.find((x) => x.id === selected) ?? (dm ? (shown[0] ?? null) : null);
   const everyone = onMic.length > 0 && onMic.every((m) => ticked.has(m.user.uuid));
   const toggle = (uuid: string) =>
     setTicked((t) => {
@@ -558,13 +564,15 @@ export function GiftSheet({
           left: 0,
           right: 0,
           bottom: 0,
-          height: px(g.height),
+          height: px(g.height - off),
           backgroundColor: GIFT_COLORS.sheet,
           borderTopLeftRadius: px(14),
           borderTopRightRadius: px(14),
           overflow: 'hidden',
         }}
       >
+        {dm ? null : (
+          <>
         {/* Who gets it: faces with a seat badge, and ALL. */}
         <ScrollView
           horizontal
@@ -577,13 +585,16 @@ export function GiftSheet({
             return (
               <Pressable key={user.uuid} onPress={() => toggle(user.uuid)} hitSlop={px(4)} style={{ width: px(g.faces.size), height: px(g.faces.size + 8) }}>
                 <Image source={avatarOf(user)} style={{ width: px(g.faces.size), height: px(g.faces.size), borderRadius: px(g.faces.size / 2), borderWidth: px(1.5), borderColor: on ? GIFT_COLORS.orangeRing : '#FFFFFF' }} />
-                <View style={{ position: 'absolute', bottom: 0, alignSelf: 'center', minWidth: px(15), height: px(15), paddingHorizontal: px(4), borderRadius: px(8), backgroundColor: on ? GIFT_COLORS.orangeRing : '#2A1B3D', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: px(9), color: colors.white, fontFamily: typography.fontFamily.medium }}>{seat}</Text>
-                </View>
+                {dm ? null : (
+                  <View style={{ position: 'absolute', bottom: 0, alignSelf: 'center', minWidth: px(15), height: px(15), paddingHorizontal: px(4), borderRadius: px(8), backgroundColor: on ? GIFT_COLORS.orangeRing : '#2A1B3D', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: px(9), color: colors.white, fontFamily: typography.fontFamily.medium }}>{seat}</Text>
+                  </View>
+                )}
               </Pressable>
             );
           })}
         </ScrollView>
+        {dm ? null : (
         <Pressable onPress={toggleAll} style={{ position: 'absolute', right: px(g.faces.allRight), top: px(g.faces.y - 2), width: px(g.faces.allSize), alignItems: 'center' }}>
           <View style={{ width: px(g.faces.allSize), height: px(g.faces.allSize), borderRadius: px(g.faces.allSize / 2), alignItems: 'center', justifyContent: 'center', backgroundColor: everyone ? 'rgba(236,149,39,0.22)' : 'rgba(255,255,255,0.06)', borderWidth: px(1.5), borderColor: everyone ? GIFT_COLORS.orangeRing : 'transparent' }}>
             <Mic size={px(18)} color={everyone ? GIFT_COLORS.orangeRing : '#6D6C73'} />
@@ -592,9 +603,13 @@ export function GiftSheet({
             <Text style={{ fontSize: px(9), color: colors.white, fontFamily: typography.fontFamily.medium }}>ALL</Text>
           </View>
         </Pressable>
+        )}
+
+          </>
+        )}
 
         {/* Tabs. */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ position: 'absolute', left: 0, right: px(66), top: px(g.tabs.y) }} contentContainerStyle={{ paddingLeft: px(g.tabs.x), gap: px(g.tabs.gap) }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ position: 'absolute', left: 0, right: px(66), top: px(g.tabs.y - off) }} contentContainerStyle={{ paddingLeft: px(g.tabs.x), gap: px(g.tabs.gap) }}>
           {tabs.map((t) => {
             const on = !bag && t.id === activeCategory;
             return (
@@ -607,14 +622,14 @@ export function GiftSheet({
         </ScrollView>
 
         {/* Backpack: the gifts you already own, behind a thin rule, as in Mazag. */}
-        <View style={{ position: 'absolute', right: px(66), top: px(g.tabs.y + 4), width: StyleSheet.hairlineWidth * 2, height: px(20), backgroundColor: 'rgba(255,255,255,0.25)' }} />
-        <Pressable onPress={() => setBag((v) => !v)} hitSlop={px(8)} style={{ position: 'absolute', right: px(14), top: px(g.tabs.y - 6), width: px(38), height: px(38), borderRadius: px(19), alignItems: 'center', justifyContent: 'center', backgroundColor: bag ? 'rgba(214,120,255,0.18)' : 'transparent' }}>
+        <View style={{ position: 'absolute', right: px(66), top: px(g.tabs.y + 4 - off), width: StyleSheet.hairlineWidth * 2, height: px(20), backgroundColor: 'rgba(255,255,255,0.25)' }} />
+        <Pressable onPress={() => setBag((v) => !v)} hitSlop={px(8)} style={{ position: 'absolute', right: px(14), top: px(g.tabs.y - 6 - off), width: px(38), height: px(38), borderRadius: px(19), alignItems: 'center', justifyContent: 'center', backgroundColor: bag ? 'rgba(214,120,255,0.18)' : 'transparent' }}>
           <ShoppingBag size={px(22)} color="#F29CFF" strokeWidth={1.8} />
         </Pressable>
 
         {/* The gifts: four across, edge to edge, scrolling. */}
         {bag ? (
-          <View style={{ position: 'absolute', left: 0, right: 0, top: px(g.grid.y + 40), alignItems: 'center' }}>
+          <View style={{ position: 'absolute', left: 0, right: 0, top: px(g.grid.y + 40 - off), alignItems: 'center' }}>
             <Backpack size={px(44)} color="#6D6C73" />
             <Text style={[styles.regular, { marginTop: px(12), fontSize: px(13), color: GIFT_COLORS.dim }]}>Your backpack is empty</Text>
           </View>
@@ -625,11 +640,11 @@ export function GiftSheet({
         ) : (
           <ScrollView
             showsVerticalScrollIndicator={false}
-            style={{ position: 'absolute', left: 0, right: 0, top: px(g.grid.y), bottom: px(g.bar.height) }}
+            style={{ position: 'absolute', left: 0, right: 0, top: px(g.grid.y - off), bottom: px(g.bar.height) }}
             contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap' }}
           >
             {shown.map((gift) => {
-              const on = gift.id === selected;
+              const on = gift.id === chosen?.id;
               return (
                 <Pressable
                   key={gift.id}

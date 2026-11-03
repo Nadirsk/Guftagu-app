@@ -1,19 +1,22 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { setStatusBarStyle } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import * as icons from '../../assets/home/icons';
 import { storage, useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
 import { useDesignScale } from '../../theme/layout';
 import { colors } from '../../theme/tokens';
+import { openThread } from '../chats/parts';
+import type { PostAuthor } from '../moment/parts';
 import { BOTTOM_NAV_HEIGHT, useBottomNavHeight } from './BottomNav';
 import DailyRewards, { type CheckinDay } from './DailyRewards';
 import FamilyBody from './FamilyBody';
+import { useHomeBoards } from './boards';
 import { FeedPlaceholder, PostCard, useFeed, useFollow } from './feed';
 import { ADD_FAB, LIVE_CARD, POST } from './geometry';
 import { HomeHeader, TabRow, type TabName } from './header';
@@ -38,12 +41,31 @@ function today() {
   return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 }
 
-export default function HomeFeedScreen() {
+/** `onOpenExplore` — the Live card sends you to Party › Explore, where the rooms are listed. */
+export default function HomeFeedScreen({ onOpenExplore }: { onOpenExplore?: () => void }) {
   const { px } = useDesignScale();
   const navigation = useNavigation<NavigationProp>();
   const { user, token } = useAuth();
   const navHeight = useBottomNavHeight();
   const [tab, setTab] = useState<TabName>('For You');
+  const chatting = useRef(false);
+
+  /** Opens (or creates) the one-to-one thread with a post's author. */
+  const openChat = useCallback(
+    async (author: PostAuthor) => {
+      if (chatting.current) return;
+      chatting.current = true;
+      try {
+        const conversation = await openThread(token, author);
+        navigation.navigate('Conversation', { uuid: conversation.uuid, peer: author });
+      } catch (e) {
+        Alert.alert('Chat', e instanceof ApiError ? e.displayMessage : 'Could not open the chat.');
+      } finally {
+        chatting.current = false;
+      }
+    },
+    [navigation, token],
+  );
   const [refreshing, setRefreshing] = useState(false);
   const [week, setWeek] = useState<CheckinDay[] | null>(null);
 
@@ -56,17 +78,6 @@ export default function HomeFeedScreen() {
     following.refresh();
   }, [forYou.refresh, following.refresh]);
   const follow = useFollow(refreshFeeds);
-
-  // The Live card is a still from Figma; tapping it walks into the busiest room live now.
-  const openLiveRoom = useCallback(async () => {
-    try {
-      const [room] = await api<{ uuid: string }[]>('/rooms/live?limit=1', { token });
-      if (room) navigation.navigate('Room', { uuid: room.uuid });
-      else Alert.alert('Live', 'No room is live right now.');
-    } catch {
-      Alert.alert('Live', 'Could not load live rooms.');
-    }
-  }, [navigation, token]);
 
   // The rest of the app is white with a dark status bar; this screen is not.
   useFocusEffect(
@@ -98,9 +109,31 @@ export default function HomeFeedScreen() {
     };
   }, [token]);
 
+  // "Active Now" — people who made a request in the last few minutes. Refreshed
+  // while the screen is focused.
+  const [online, setOnline] = useState(0);
+  const boards = useHomeBoards(token);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      const load = () =>
+        api<{ online: number }>('/presence/online-count', { token })
+          .then((r) => {
+            if (!cancelled) setOnline(r.online);
+          })
+          .catch(() => undefined);
+      load();
+      const timer = setInterval(load, 30000);
+      return () => {
+        cancelled = true;
+        clearInterval(timer);
+      };
+    }, [token]),
+  );
+
   const claim = useCallback(async () => {
     try {
-      return await api<{ reward_type: string; reward_value: number }>('/checkin', { method: 'POST', token });
+      return await api<NonNullable<Awaited<ReturnType<React.ComponentProps<typeof DailyRewards>['onClaim']>>>>('/checkin', { method: 'POST', token });
     } catch {
       return null;
     }
@@ -118,7 +151,7 @@ export default function HomeFeedScreen() {
   } else if (tab === 'Live') {
     body = (
       <View style={{ height: px(LIVE_CARD.y - POST.y + LIVE_CARD.height) }}>
-        <HeroCard originY={POST.y} onPress={openLiveRoom} />
+        <HeroCard originY={POST.y} onPress={onOpenExplore} />
       </View>
     );
   } else if (feed && feed.posts.length > 0) {
@@ -137,6 +170,9 @@ export default function HomeFeedScreen() {
               followBusy={author ? follow.busy[author.uuid] ?? false : false}
               onToggleFollow={() => {
                 if (author) follow.toggle(author);
+              }}
+              onChat={() => {
+                if (author) openChat(author);
               }}
               onOpen={() => navigation.navigate('PostDetails', { post, following: !isForYou })}
               onOpenMedia={(index) =>
@@ -188,7 +224,7 @@ export default function HomeFeedScreen() {
       >
         {/* The header block; its backdrop runs on underneath the tab body. */}
         <View style={{ height: px(POST.y), zIndex: 0 }}>
-          <HomeHeader />
+          <HomeHeader online={online} rankingFaces={boards.ranking} weeklyStarFaces={boards.weeklyStar} />
           <TabRow tab={tab} onSelect={setTab} />
         </View>
         {body}

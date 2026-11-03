@@ -1,11 +1,12 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronRight, Pin } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, BackHandler, Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
 import { api, ApiError } from '../../api/client';
+import { getEcho } from '../../api/realtime';
 import * as icons from '../../assets/chats/icons';
 import { useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
@@ -120,20 +121,46 @@ function ChatList() {
   const [people, setPeople] = useState<ChatUser[]>([]);
   const C = CHATS;
 
-  // Refreshed every time the tab comes back into view — after a thread, the counts moved.
+  // Refreshed every time the tab comes back into view — after a thread, the counts moved —
+  // and again whenever a message lands on the user's own channel (a new message, a read
+  // receipt, a deleted one), so the list, preview and unread badge move without a pull.
   useFocusEffect(
     useCallback(() => {
       let live = true;
-      api<Conversation[]>('/conversations', { token })
-        .then((rows) => live && setThreads(rows))
-        .catch((e) => {
-          if (!(e instanceof ApiError)) throw e;
-        })
-        .finally(() => live && setLoaded(true));
+      const load = () =>
+        api<Conversation[]>('/conversations', { token })
+          .then((rows) => live && setThreads(rows))
+          .catch((e) => {
+            if (!(e instanceof ApiError)) throw e;
+          })
+          .finally(() => live && setLoaded(true));
+      load();
+
+      const echo = token && user ? getEcho(token) : null;
+      const channel = echo && user ? `user.${user.uuid}` : null;
+      if (echo && channel) {
+        echo
+          .private(channel)
+          .listen('.message.new', (e: { message?: { conversation_uuid?: string | null } }) => {
+            // The app has the message now, even though its thread is not open: that is the second tick.
+            const thread = e.message?.conversation_uuid;
+            if (thread) api(`/conversations/${thread}/delivered`, { method: 'POST', token }).catch(() => undefined);
+            load();
+          })
+          .listen('.message.deleted', load);
+      }
+      // The socket can drop silently, so a slow poll keeps the list honest either way.
+      const timer = setInterval(load, 20000);
+
       return () => {
         live = false;
+        clearInterval(timer);
+        if (echo && channel) {
+          const c = echo.private(channel);
+          c.stopListening('.message.new').stopListening('.message.deleted');
+        }
       };
-    }, [token]),
+    }, [token, user]),
   );
 
   // "Recommend user in the room": whoever is in a live room right now, owners first.
@@ -218,11 +245,16 @@ function ChatList() {
               <Text numberOfLines={1} style={[styles.medium, { fontSize: px(C.meta.timeSize), lineHeight: px(15), opacity: 0.5 }]}>
                 {clock(t.last_message_at)}
               </Text>
-              {t.unread_count > 0 ? (
+              {t.unread_count > 0 || t.is_pinned ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(6) }}>
+                  {t.is_pinned ? <Pin size={px(17)} color={colors.black} strokeWidth={1.8} style={{ opacity: 0.5 }} /> : null}
+                  {t.unread_count > 0 ? (
                 <View style={{ minWidth: px(C.meta.badge), height: px(C.meta.badge), borderRadius: px(C.meta.badge / 2), paddingHorizontal: px(6), backgroundColor: C.meta.badgeColor, alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={[styles.medium, { fontSize: px(C.meta.badgeSize), lineHeight: px(15), color: colors.white }]}>
                     {t.unread_count > 99 ? '99+' : t.unread_count}
                   </Text>
+                </View>
+                  ) : null}
                 </View>
               ) : null}
             </View>

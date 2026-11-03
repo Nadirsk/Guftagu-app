@@ -57,11 +57,14 @@ export const mic = `<svg preserveAspectRatio="none" overflow="visible" style="di
 </svg>
 `;
 
-/** Frame 1597881529 (514:3095), the send button, disc included. */
+/**
+ * Frame 1597881529 (514:3095), the send button, disc included. The glyph is the paper plane
+ * the phone's own keyboard uses for its send key (Material "send"), in place of Figma's arrow.
+ */
 export const send = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="49" height="49" viewBox="0 0 49 49" fill="none" xmlns="http://www.w3.org/2000/svg">
 <g id="Frame 1597881529">
 <rect width="49" height="49" rx="24.5" fill="#005DE9"/>
-<path id="Arrow 1" d="M14 25V26H36V25V24H14V25ZM36.7071 25.7071C37.0976 25.3166 37.0976 24.6834 36.7071 24.2929L30.3431 17.9289C29.9526 17.5384 29.3195 17.5384 28.9289 17.9289C28.5384 18.3195 28.5384 18.9526 28.9289 19.3431L34.5858 25L28.9289 30.6569C28.5384 31.0474 28.5384 31.6805 28.9289 32.0711C29.3195 32.4616 29.9526 32.4616 30.3431 32.0711L36.7071 25.7071Z" fill="white"/>
+<path id="Paper plane" transform="translate(12.5 12.5) scale(1.0)" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="white"/>
 </g>
 </svg>
 `;

@@ -95,6 +95,7 @@ type SearchUser = {
   guftagu_id: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  is_following?: boolean;
 };
 
 type HistoryEntry = {
@@ -266,6 +267,15 @@ export default function SearchScreen() {
         );
         if (requestId.current !== id) return;
         setResults(data.users);
+        // Seed from the server so someone already followed never offers Follow;
+        // a local toggle made earlier in this session still wins.
+        setFollowed((f) => {
+          const seeded = { ...f };
+          for (const u of data.users) {
+            if (u.is_following && seeded[u.uuid] === undefined) seeded[u.uuid] = true;
+          }
+          return seeded;
+        });
         setError(undefined);
       } catch (e) {
         if (requestId.current !== id) return;

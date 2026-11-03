@@ -61,9 +61,9 @@ export const BANNER_LEFT: BannerSpec = {
   background: art.smallLeft,
   size: { width: 177.878, height: 80 },
   photos: {
-    left: { x: 23.295, y: 47.403, width: 28.534, height: 28.534 },
-    right: { x: 131.215, y: 48.403, width: 28.534, height: 28.534 },
-    center: { x: 69, y: 21, width: 41, height: 41 },
+    left: { x: 23.45, y: 47.14, width: 28.534, height: 28.534 },
+    right: { x: 129.39, y: 47.14, width: 28.534, height: 28.534 },
+    center: { x: 69.42, y: 24.74, width: 41, height: 41 },
   },
   frames: {
     left: { x: 9, y: 39, width: 45.459, height: 40.531 },
@@ -78,9 +78,9 @@ export const BANNER_LEFT: BannerSpec = {
     paddingBottom: 16,
   },
   photoSources: {
-    left: require('../../assets/home/b1-left.png'),
-    right: require('../../assets/home/b1-right.png'),
-    center: require('../../assets/home/b1-center.png'),
+    left: require('../../assets/avatar-placeholder.png'),
+    right: require('../../assets/avatar-placeholder.png'),
+    center: require('../../assets/avatar-placeholder.png'),
   },
 };
 
@@ -90,9 +90,9 @@ export const BANNER_RIGHT: BannerSpec = {
   background: art.smallRight,
   size: { width: 177.878, height: 80 },
   photos: {
-    left: { x: 23.295, y: 47.403, width: 28.534, height: 28.534 },
-    right: { x: 129.215, y: 47.403, width: 28.534, height: 28.534 },
-    center: { x: 69, y: 26, width: 41, height: 41 },
+    left: { x: 23.45, y: 47.14, width: 28.534, height: 28.534 },
+    right: { x: 129.39, y: 47.14, width: 28.534, height: 28.534 },
+    center: { x: 69.42, y: 24.74, width: 41, height: 41 },
   },
   frames: {
     left: { x: 9, y: 39, width: 45.459, height: 40.531 },
@@ -107,9 +107,9 @@ export const BANNER_RIGHT: BannerSpec = {
     paddingBottom: 16,
   },
   photoSources: {
-    left: require('../../assets/home/b2-left.png'),
-    right: require('../../assets/home/b2-right.png'),
-    center: require('../../assets/home/b2-center.png'),
+    left: require('../../assets/avatar-placeholder.png'),
+    right: require('../../assets/avatar-placeholder.png'),
+    center: require('../../assets/avatar-placeholder.png'),
   },
 };
 
@@ -123,9 +123,9 @@ export const BANNER_WIDE: BannerSpec = {
   background: art.wide,
   size: { width: 372, height: 105 },
   photos: {
-    left: { x: 66.887, y: 46.127, width: 42.683, height: 41.489 },
-    right: { x: 271.558, y: 37.731, width: 45.836, height: 45.216 },
-    center: { x: 164, y: 36, width: 48, height: 49 },
+    left: { x: 68.62, y: 42.85, width: 42.683, height: 41.489 },
+    right: { x: 271.84, y: 38.9, width: 45.836, height: 45.216 },
+    center: { x: 163.8, y: 35, width: 48, height: 49 },
   },
   frames: {
     left: { x: 47, y: 31, width: 68, height: 58.933 },
@@ -141,14 +141,36 @@ export const BANNER_WIDE: BannerSpec = {
     paddingBottom: 16,
   },
   photoSources: {
-    left: require('../../assets/home/b3-left.png'),
-    right: require('../../assets/home/b3-right.png'),
-    center: require('../../assets/home/b3-center.png'),
+    left: require('../../assets/avatar-placeholder.png'),
+    right: require('../../assets/avatar-placeholder.png'),
+    center: require('../../assets/avatar-placeholder.png'),
   },
 };
 
-export function TrioBanner({ spec, onPress }: { spec: BannerSpec; onPress?: () => void }) {
+// Photo slots are centred on the hollow of their crown frame, not on the frame's
+// box: the side crowns carry a wing, so the hollow sits at ~63% / ~37% of the
+// bitmap width and ~55% down; the centre crown's is at ~51% x 52%.
+
+/**
+ * `faces` are the live top three — [1st, 2nd, 3rd] photo urls. 1st takes the
+ * centre crown, 2nd the left and 3rd the right; an empty slot keeps the artwork.
+ */
+export function TrioBanner({
+  spec,
+  onPress,
+  faces = [],
+}: {
+  spec: BannerSpec;
+  onPress?: () => void;
+  faces?: (string | undefined)[];
+}) {
   const { px } = useDesignScale();
+  const photo = (url: string | undefined, fallback: ImageSourcePropType) => (url ? { uri: url } : fallback);
+  const sources = {
+    center: photo(faces[0], spec.photoSources.center),
+    left: photo(faces[1], spec.photoSources.left),
+    right: photo(faces[2], spec.photoSources.right),
+  };
   const box = (b: Box) => ({
     position: 'absolute' as const,
     left: px(b.x),
@@ -177,13 +199,13 @@ export function TrioBanner({ spec, onPress }: { spec: BannerSpec; onPress?: () =
       <Image source={spec.background} style={fill} resizeMode="stretch" />
 
       {/* photo first, crown frame on top — the frames have a hollow centre */}
-      <Image source={spec.photoSources.left} style={box(spec.photos.left)} resizeMode="cover" />
+      <Image source={sources.left} style={box(spec.photos.left)} resizeMode="cover" />
       <Image source={art.frameLeft} style={box(spec.frames.left)} resizeMode="stretch" />
 
-      <Image source={spec.photoSources.right} style={box(spec.photos.right)} resizeMode="cover" />
+      <Image source={sources.right} style={box(spec.photos.right)} resizeMode="cover" />
       <Image source={art.frameRight} style={box(spec.frames.right)} resizeMode="stretch" />
 
-      <Image source={spec.photoSources.center} style={box(spec.photos.center)} resizeMode="cover" />
+      <Image source={sources.center} style={box(spec.photos.center)} resizeMode="cover" />
       {centerInset ? (
         <View style={[box(spec.frames.center), styles.clip]}>
           <Image

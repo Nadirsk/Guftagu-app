@@ -192,6 +192,8 @@ export type Moment = {
   comment_count: number;
   is_hidden: boolean;
   liked_by_me?: boolean;
+  /** Only on `GET /posts/{uuid}`. */
+  author_is_following?: boolean;
   created_at: string | null;
 };
 

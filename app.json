@@ -18,7 +18,11 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.guftagu",
-      "permissions": ["RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS", "BLUETOOTH_CONNECT"],
+      "permissions": [
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "BLUETOOTH_CONNECT"
+      ],
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "resize"
     },
@@ -46,7 +50,8 @@
           "cameraPermission": "Guftagu needs the camera for video seats in a voice room."
         }
       ],
-      "expo-dev-client"
+      "expo-dev-client",
+      "expo-audio"
     ],
     "scheme": "guftagu"
   }
