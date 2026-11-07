@@ -1,0 +1,21 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.guftagu'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.roommusic"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+    consumerProguardFiles 'proguard-rules.pro'
+  }
+}
+
+dependencies {
+  // WebRTCModuleOptions and org.webrtc.audio.* — the mic path the room's voice uses.
+  implementation project(':react-native-webrtc')
+}

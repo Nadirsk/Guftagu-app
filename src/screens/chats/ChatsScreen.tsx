@@ -2,7 +2,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronRight, Pin } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, BackHandler, Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
 import { api, ApiError } from '../../api/client';
@@ -12,6 +12,7 @@ import { useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
 import { useDesignScale } from '../../theme/layout';
 import { colors } from '../../theme/tokens';
+import { LevelBadges, READABLE_BADGE_HEIGHT } from '../level/LevelBadge';
 import { BOTTOM_NAV_HEIGHT } from '../home/BottomNav';
 import { FollowChip } from '../moment/parts';
 import { CHATS, CONTACTS, LIST, TABS } from './geometry';
@@ -23,13 +24,16 @@ import {
   EmptyState,
   ListHeader,
   nameOf,
+  messageCache,
   openThread,
   peerOf,
+  prefetchMessages,
   preview,
   styles,
   useFollowToggle,
   usePeople,
 } from './parts';
+import { UserAvatar } from '../../components/UserAvatar';
 
 /**
  * The Chats tab — sections 514:3077 and 519:2450. "Chats" is the DM list under
@@ -129,7 +133,14 @@ function ChatList() {
       let live = true;
       const load = () =>
         api<Conversation[]>('/conversations', { token })
-          .then((rows) => live && setThreads(rows))
+          .then((rows) => {
+            if (!live) return;
+            setThreads(rows);
+            // Warm the first few threads so tapping one opens on its messages, not a blank page.
+            for (const t of rows.slice(0, 6)) {
+              if (!messageCache.has(t.uuid)) prefetchMessages(token, t.uuid);
+            }
+          })
           .catch((e) => {
             if (!(e instanceof ApiError)) throw e;
           })
@@ -185,7 +196,7 @@ function ChatList() {
   const chatWith = async (u: ChatUser) => {
     try {
       const conversation = await openThread(token, u);
-      navigation.navigate('Conversation', { uuid: conversation.uuid, peer: u });
+      navigation.navigate('Conversation', { uuid: conversation.uuid, peer: u, alias: conversation.alias });
     } catch (e) {
       Alert.alert('Chat', e instanceof ApiError ? e.displayMessage : 'Could not open the chat.');
     }
@@ -207,8 +218,8 @@ function ChatList() {
       >
         {people.map((u) => (
           <Pressable key={u.uuid} onPress={() => chatWith(u)} style={{ width: px(C.recommend.item), alignItems: 'center', gap: px(C.recommend.nameGap) }}>
-            <Image source={avatarOf(u)} style={{ width: px(C.recommend.avatar), height: px(C.recommend.avatar), borderRadius: px(C.recommend.avatar / 2) }} />
-            <Text numberOfLines={1} style={[styles.medium, { width: px(C.recommend.item + 10), textAlign: 'center', fontSize: px(C.recommend.nameSize), lineHeight: px(19) }]}>
+            <UserAvatar source={avatarOf(u)} frame={u.frame} size={px(C.recommend.avatar)} />
+            <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.medium, { width: px(C.recommend.item), textAlign: 'center', fontSize: px(C.recommend.nameSize), lineHeight: px(19) }]}>
               {nameOf(u)}
             </Text>
           </Pressable>
@@ -229,13 +240,13 @@ function ChatList() {
         return (
           <Pressable
             key={t.uuid}
-            onPress={() => navigation.navigate('Conversation', { uuid: t.uuid, peer })}
+            onPress={() => navigation.navigate('Conversation', { uuid: t.uuid, peer, alias: t.alias })}
             style={{ position: 'absolute', left: px(R.x), top: px(y), width: px(R.width), height: px(R.avatar), flexDirection: 'row', alignItems: 'center' }}
           >
-            <Image source={avatarOf(peer)} style={{ width: px(R.avatar), height: px(R.avatar), borderRadius: px(R.avatar / 2) }} />
+            <UserAvatar source={avatarOf(peer)} frame={peer.frame} size={px(R.avatar)} />
             <View style={{ flex: 1, marginLeft: px(R.gap), marginRight: px(8), gap: px(R.textGap) }}>
               <Text numberOfLines={1} style={[styles.medium, { fontSize: px(R.nameSize), lineHeight: px(19) }]}>
-                {nameOf(peer)}
+                {t.alias ?? nameOf(peer)}
               </Text>
               <Text numberOfLines={1} style={[styles.medium, { fontSize: px(R.previewSize), lineHeight: px(18), opacity: 0.5 }]}>
                 {preview(t.last_message)}
@@ -321,7 +332,7 @@ function PeopleList({ kind, onBack }: { kind: ListKind; onBack: () => void }) {
   const chatWith = async (u: ChatUser) => {
     try {
       const conversation = await openThread(token, u);
-      navigation.navigate('Conversation', { uuid: conversation.uuid, peer: u });
+      navigation.navigate('Conversation', { uuid: conversation.uuid, peer: u, alias: conversation.alias });
     } catch (e) {
       Alert.alert('Chat', e instanceof ApiError ? e.displayMessage : 'Could not open the chat.');
     }
@@ -334,39 +345,46 @@ function PeopleList({ kind, onBack }: { kind: ListKind; onBack: () => void }) {
           <EmptyState x={LIST.empty.x} y={kind === 'following' || kind === 'family' ? 336 : LIST.empty.y} size={LIST.empty.size} label="No Content here" labelSize={LIST.empty.labelSize} />
         ) : null}
         {people.map((p, i) => {
-          // Friends follow each other by definition; the other two lists say per row.
-          const following = kind === 'friends' || kind === 'following' ? p.is_following ?? true : p.is_following ?? false;
+          // Following is always true there; Followers says per row whether you follow them back.
+          const following = kind === 'following' ? p.is_following ?? true : p.is_following ?? false;
           return (
             <Pressable
               key={p.uuid}
               onPress={() => chatWith(p)}
               style={{ position: 'absolute', left: px(R.x), top: px(top + i * R.step), width: px(R.width), height: px(66), flexDirection: 'row', alignItems: 'center' }}
             >
-              <Image source={avatarOf(p)} style={{ width: px(66), height: px(66), borderRadius: px(33) }} />
-              <View style={{ flex: 1, marginLeft: px(11), marginRight: px(8), gap: px(3) }}>
+              <UserAvatar source={avatarOf(p)} frame={p.frame} size={px(66)} />
+              {/* 23 + 2 + 20 + 2 + 19: name, medals and ID fill the 66px row exactly. */}
+              <View style={{ flex: 1, marginLeft: px(11), marginRight: px(8), gap: px(2) }}>
                 <Text numberOfLines={1} style={[styles.regular, { fontSize: px(18), lineHeight: px(23) }]}>
                   {nameOf(p)}
                 </Text>
+                <LevelBadges user={p} height={READABLE_BADGE_HEIGHT} />
                 {p.guftagu_id ? (
                   <Text numberOfLines={1} style={[styles.regular, { fontSize: px(15), lineHeight: px(19), opacity: 0.3 }]}>
                     ID: {p.guftagu_id}
                   </Text>
                 ) : null}
               </View>
-              <FollowChip
-                following={following}
-                busy={follow.busy[p.uuid] ?? false}
-                followingLabel={kind === 'following' ? 'UnFollow' : undefined}
-                onPress={async () => {
-                  const now = await follow.toggle(p.uuid, following);
-                  setPeople((list) =>
-                    // Unfollowing from Following (or a friend) takes them off this list.
-                    !now && (kind === 'following' || kind === 'friends')
-                      ? list.filter((x) => x.uuid !== p.uuid)
-                      : list.map((x) => (x.uuid === p.uuid ? { ...x, is_following: now } : x)),
-                  );
-                }}
-              />
+              {/* Friends already follow each other, and a follower you follow back needs no
+                  button either: Followers only offers Follow, Following only UnFollow. */}
+              {kind === 'friends' || (kind === 'followers' && following) ? null : (
+                <FollowChip
+                  following={following}
+                  busy={follow.busy[p.uuid] ?? false}
+                  followingLabel="UnFollow"
+                  onPress={async () => {
+                    const now = await follow.toggle(p.uuid, following);
+                    setPeople((list) =>
+                      // Unfollowing from Following takes them off this list; in Followers
+                      // the row stays and its chip flips back to Follow.
+                      !now && kind === 'following'
+                        ? list.filter((x) => x.uuid !== p.uuid)
+                        : list.map((x) => (x.uuid === p.uuid ? { ...x, is_following: now } : x)),
+                    );
+                  }}
+                />
+              )}
             </Pressable>
           );
         })}

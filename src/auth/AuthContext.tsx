@@ -12,6 +12,7 @@ import {
 import { Platform } from 'react-native';
 
 import { api, ApiError } from '../api/client';
+import type { AvatarFrame } from '../components/UserAvatar';
 
 const TOKEN_KEY = 'guftagu.auth.token';
 const DEVICE_KEY = 'guftagu.device.id';
@@ -48,9 +49,15 @@ export type AuthUser = {
   phone: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  /** The frame they wear from the Item Bag; null when none. */
+  frame?: AvatarFrame | null;
   gender: string | null;
   date_of_birth: string | null;
   country: string | null;
+  /** Settings → Language; a code from the Language screen (en, hi, mr, ur, bn). */
+  language?: string | null;
+  /** Settings → Notification toggles, keyed by the screen's switches. */
+  notification_prefs?: Record<string, boolean> | null;
   status: string;
   is_profile_complete: boolean;
 };
@@ -94,6 +101,18 @@ type AuthContextValue = {
     // Unverified — only reaches this screen when signup (OTP/social) didn't already set it.
     email?: string | null;
     phone?: string | null;
+  }) => Promise<void>;
+  /**
+   * `PATCH /profile` (Settings → Account, Language, Notification): saves the fields and
+   * swaps in the user the server sends back, so every screen shows the change at once.
+   */
+  updateProfile: (fields: {
+    display_name?: string;
+    avatar_url?: string | null;
+    date_of_birth?: string;
+    gender?: 'male' | 'female' | 'undisclosed';
+    language?: string | null;
+    notification_prefs?: Record<string, boolean>;
   }) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -214,6 +233,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
 
       token,
+
+      updateProfile: async (fields) => {
+        const data = await api<{ user: AuthUser }>('/profile', { method: 'PATCH', body: fields, token });
+        setUser(data.user);
+      },
 
       signOut: async () => {
         // Best effort: if revoking server-side fails the local session still goes.

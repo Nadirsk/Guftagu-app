@@ -91,13 +91,15 @@ export type VoiceArgs = {
   seated: { seat: number; uuid: string }[];
   /** True when I hold a seat and am neither self-muted nor muted by the host. */
   micOpen: boolean;
+  /** A song is being mixed into my mic: keep the track live even while the mic is off. */
+  musicOn?: boolean;
   speakerOff: boolean;
   iceServers: Ice[];
   /** Only listen and speak once the room has been joined. */
   ready: boolean;
 };
 
-export function useVoice({ roomUuid, token, meUuid, seated, micOpen, speakerOff, iceServers, ready }: VoiceArgs) {
+export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = false, speakerOff, iceServers, ready }: VoiceArgs) {
   const [speaking, setSpeaking] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<'off' | 'unavailable' | 'live' | 'denied'>('off');
 
@@ -114,8 +116,8 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, speakerOff,
   const deferred = useRef(new Set<string>());
   const members = useRef(new Set<string>());
   const knownPublishers = useRef(new Set<string>());
-  const latest = useRef({ micOpen, speakerOff, iceServers, meUuid, publishers, iAmSeated });
-  latest.current = { micOpen, speakerOff, iceServers, meUuid, publishers, iAmSeated };
+  const latest = useRef({ micOpen, musicOn, speakerOff, iceServers, meUuid, publishers, iAmSeated });
+  latest.current = { micOpen, musicOn, speakerOff, iceServers, meUuid, publishers, iAmSeated };
 
   const whisper = (event: string, payload: object) => {
     try {
@@ -305,7 +307,7 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, speakerOff,
           return;
         }
         local.current = stream;
-        stream.getAudioTracks().forEach((t) => (t.enabled = latest.current.micOpen));
+        stream.getAudioTracks().forEach((t) => (t.enabled = latest.current.micOpen || latest.current.musicOn));
         log('publishing');
         setStatus('live');
         // Anything open so far was receive-only: put my mic on it. Adding a track fires
@@ -341,8 +343,8 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, speakerOff,
 
   // ---- mic open / closed: the track stays, it just stops carrying sound
   useEffect(() => {
-    local.current?.getAudioTracks().forEach((t) => (t.enabled = micOpen));
-    if (!micOpen && meUuid) {
+    local.current?.getAudioTracks().forEach((t) => (t.enabled = micOpen || musicOn));
+    if (!micOpen && !musicOn && meUuid) {
       whisper('speaking', { uuid: meUuid, speaking: false });
       setSpeaking((prev) => {
         const next = new Set(prev);
@@ -351,27 +353,30 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, speakerOff,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [micOpen]);
+  }, [micOpen, musicOn]);
 
   useEffect(applySpeaker, [speakerOff]);
 
-  // ---- who is talking: read my own outbound level and tell the room
+  // ---- who is talking: read my own outbound level and tell the room.
+  // Music counts as sound on my seat: playing it shows the ring even when the mic is shut or
+  // nobody else is in the room (no peer connection means no stats to read).
   useEffect(() => {
-    if (!ready || !iAmSeated || !micOpen || !meUuid) return;
-    let was = false;
+    if (!ready || !iAmSeated || !(micOpen || musicOn) || !meUuid) return;
+    let was: boolean | null = null; // null: the first tick always reports, so a restart never leaves a stale ring
     const t = setInterval(async () => {
       const first = peers.current.values().next().value as PeerLike | undefined;
-      if (!first) return;
       let level = 0;
-      await first
-        .getStats()
-        .then((report) =>
-          report.forEach((r) => {
-            if (r.type === 'media-source' && r.kind === 'audio' && typeof r.audioLevel === 'number') level = Math.max(level, r.audioLevel);
-          }),
-        )
-        .catch(() => undefined);
-      const talking = level > TALK_LEVEL;
+      if (first) {
+        await first
+          .getStats()
+          .then((report) =>
+            report.forEach((r) => {
+              if (r.type === 'media-source' && r.kind === 'audio' && typeof r.audioLevel === 'number') level = Math.max(level, r.audioLevel);
+            }),
+          )
+          .catch(() => undefined);
+      }
+      const talking = musicOn || (micOpen && level > TALK_LEVEL);
       if (talking === was) return;
       was = talking;
       whisper('speaking', { uuid: meUuid, speaking: talking });
@@ -384,7 +389,7 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, speakerOff,
     }, 400);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, iAmSeated, micOpen, meUuid]);
+  }, [ready, iAmSeated, micOpen, musicOn, meUuid]);
 
   return { speaking, status };
 }

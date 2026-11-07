@@ -1,0 +1,26 @@
+-- Merging decision tree log ---
+manifest
+ADDED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml:1:1-5:12
+INJECTED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml:1:1-5:12
+	package
+		INJECTED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml
+	xmlns:android
+		ADDED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml:1:11-69
+uses-permission#android.permission.READ_MEDIA_AUDIO
+ADDED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml:3:3-73
+	android:name
+		ADDED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml:3:20-70
+uses-permission#android.permission.READ_EXTERNAL_STORAGE
+ADDED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml:4:3-105
+	android:maxSdkVersion
+		ADDED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml:4:76-102
+	android:name
+		ADDED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml:4:20-75
+uses-sdk
+INJECTED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml
+INJECTED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from C:\xampp\htdocs\Guftagoo\mobile\modules\room-music\android\src\main\AndroidManifest.xml

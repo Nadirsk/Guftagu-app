@@ -15,8 +15,11 @@ import type { RootStackParamList } from '../../navigation/types';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
 import { BOTTOM_NAV_HEIGHT } from '../home/BottomNav';
+import { LevelBadge } from '../level/LevelBadge';
 import type { FeedItem } from '../moment/parts';
 import { isVideoUrl } from '../moment/parts';
+import { cachedOwned, equippedOf, fetchOwned, type OwnedItem } from '../itemBag/owned';
+import { FramedAvatar } from '../store/parts';
 
 /**
  * Profile — the Mine tab. Figma 676:4517 (Moment tab), 595:3620 (Gift tab with
@@ -24,17 +27,29 @@ import { isVideoUrl } from '../moment/parts';
  * the 402-wide frame's own coordinates; Delight is set in Poppins, as elsewhere.
  *
  * Everything shown is the signed-in user's: `auth/me`, `wallet`,
- * `users/{uuid}/stats`, `users/{uuid}/posts` and `users/{uuid}/gifts`. The rows
- * that lead to screens the app does not have yet (Store, Medals, Level, …) say so.
+ * `users/{uuid}/stats`, `users/{uuid}/posts`, `users/{uuid}/gifts`, and the frame
+ * they wear from the Item Bag (`store/items/mine`) — Figma's laurel was a sample
+ * of it, so with no frame on, the photo stands alone. The rows
+ * that lead to screens the app does not have yet (Store, Medals, …) say so. The two
+ * badges under the photo are the wealth and charm grade medals for the user's levels.
  */
 
 const AVATAR = require('../../assets/avatar-placeholder.png');
-const BADGES = require('../../assets/room/badge-strip.png');
+/** The badge row's height — the strip it replaced was 20.16 tall. */
+const BADGE_H = 20.16;
 
 type Stats = { following: number; followers: number; visitors: number | null };
-type Wallet = { coin_balance: number; diamond_balance: number };
+type LevelRef = { level: number; name_en: string; badge_url: string | null } | null;
+type Wallet = { coin_balance: number; diamond_balance: number; wealth_level: LevelRef; charm_level: LevelRef };
 type GiftRow = { gift: { id: number; name_en: string; thumbnail_url: string | null }; quantity: number };
 type Gifts = { earned: number | null; spent: number | null; items: GiftRow[] };
+
+/**
+ * Ellipse 98, the photo (87 wide at 41, 114). A worn frame is drawn about it at the
+ * Store's proportion — its 96px avatar sits in a 141px frame.
+ */
+const PHOTO = { x: 41, y: 114, size: 87 } as const;
+const FRAME_SIZE = (PHOTO.size * 141) / 96;
 
 /** Moment card geometry (Frame 1597881267): one moment is 237 tall from y 88. */
 const MOMENT = { top: 88, step: 237, thumb: { x: 20, width: 197, height: 180 } } as const;
@@ -42,19 +57,24 @@ const MOMENT = { top: 88, step: 237, thumb: { x: 20, width: 197, height: 180 } }
 export default function ProfileScreen() {
   const { px } = useDesignScale();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { user, token, signOut } = useAuth();
+  const { user, token } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [posts, setPosts] = useState<FeedItem[] | null>(null);
   const [tab, setTab] = useState<'Moment' | 'Gift'>('Moment');
   const [direction, setDirection] = useState<'received' | 'sent'>('received');
   const [gifts, setGifts] = useState<Gifts | null>(null);
+  const [owned, setOwned] = useState<OwnedItem[] | null>(cachedOwned);
+  const frame = equippedOf(owned, 'frame');
+  const photo = user?.avatar_url ? { uri: user.avatar_url } : AVATAR;
 
   const load = useCallback(() => {
     if (!user) return;
     api<Stats>(`/users/${user.uuid}/stats`, { token }).then(setStats).catch(() => undefined);
     api<Wallet>('/wallet', { token }).then(setWallet).catch(() => undefined);
     api<FeedItem[]>(`/users/${user.uuid}/posts?limit=20`, { token }).then(setPosts).catch(() => setPosts([]));
+    // Reloaded on every visit, so a frame put on or taken off in the Item Bag shows here.
+    fetchOwned(token).then(setOwned).catch(() => undefined);
   }, [token, user]);
 
   useFocusEffect(
@@ -90,18 +110,27 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ height: px(contentHeight) + BOTTOM_NAV_HEIGHT }} showsVerticalScrollIndicator={false}>
-      {/* image 7 + Ellipse 98 — the laurel frame, the face inside it. */}
-      <View style={{ position: 'absolute', left: px(14), top: px(89), width: px(147), height: px(143), overflow: 'hidden' }}>
-        <Image source={require('../../assets/profile/avatar-frame.jpg')} style={{ position: 'absolute', left: px(-21.2), top: px(-18.5), width: px(185.4), height: px(185.4) }} />
-      </View>
-      <Image source={user?.avatar_url ? { uri: user.avatar_url } : AVATAR} style={{ position: 'absolute', left: px(41), top: px(114), width: px(87), height: px(87), borderRadius: px(43.5) }} />
+      {/* Ellipse 98 — the photo, inside the frame you wear (image 7 in Figma), if any. */}
+      {frame ? (
+        <Pressable
+          onPress={() => navigation.navigate('ItemBag')}
+          accessibilityLabel="Change frame"
+          style={{ position: 'absolute', left: px(PHOTO.x - (FRAME_SIZE - PHOTO.size) / 2), top: px(PHOTO.y - (FRAME_SIZE - PHOTO.size) / 2) }}
+        >
+          <FramedAvatar item={frame} avatar={photo} size={FRAME_SIZE} avatarSize={PHOTO.size} u={px} />
+        </Pressable>
+      ) : (
+        <Image source={photo} style={{ position: 'absolute', left: px(PHOTO.x), top: px(PHOTO.y), width: px(PHOTO.size), height: px(PHOTO.size), borderRadius: px(PHOTO.size / 2) }} />
+      )}
 
       {/* Group 1597881067 — name, gender, ID, country. */}
       <View style={{ position: 'absolute', left: px(172.5), top: px(114), flexDirection: 'row', alignItems: 'center', gap: px(6), maxWidth: px(220) }}>
         <Text numberOfLines={1} style={[styles.medium, { fontSize: px(19), color: colors.black, flexShrink: 1 }]}>
           {user?.display_name ?? 'Guftagu user'}
         </Text>
-        {user?.gender === 'male' ? <SvgXml xml={icons.male} width={px(22.5)} height={px(22.5)} /> : null}
+        {user?.gender === 'male' || user?.gender === 'female' ? (
+          <SvgXml xml={user.gender === 'male' ? icons.male : icons.female} width={px(22.5)} height={px(22.5)} />
+        ) : null}
       </View>
       <Text style={[styles.regular, { position: 'absolute', left: px(172.5), top: px(144), fontSize: px(14), color: 'rgba(0,0,0,0.3)' }]}>
         {`ID : ${user?.guftagu_id ?? ''}`}
@@ -112,8 +141,14 @@ export default function ProfileScreen() {
           <Text style={[styles.regular, { fontSize: px(14), color: colors.black }]}>{user.country}</Text>
         </View>
       ) : null}
-      <View style={{ position: 'absolute', left: px(15), top: px(236), width: px(92), height: px(20.16), overflow: 'hidden' }}>
-        <Image source={BADGES} resizeMode="stretch" style={{ position: 'absolute', left: px(92 * 0.0065), width: px(92 * 0.9423), height: px(20.16) }} />
+      {/* Where the static wealth/charm badge strip sat: the user's own grade medals,
+          each showing their exact wealth / charm level. */}
+      <View style={{ position: 'absolute', left: px(15), top: px(236), height: px(BADGE_H), flexDirection: 'row', gap: px(4) }}>
+        {(['wealth', 'charm'] as const).map((kind) => (
+          <Pressable key={kind} onPress={() => navigation.navigate('Level', { kind })} accessibilityLabel={`${kind} level`}>
+            <LevelBadge kind={kind} level={wallet?.[`${kind}_level`]?.level} height={BADGE_H} />
+          </Pressable>
+        ))}
       </View>
 
       {/* Frame 1597881234 — the three counts. */}
@@ -123,7 +158,7 @@ export default function ProfileScreen() {
           ['Followers', stats?.followers, 201.5],
           ['Visitors', stats?.visitors, 329],
         ] as const).map(([label, value, center]) => (
-          <Pressable key={label} onPress={() => soon(label)} style={{ position: 'absolute', left: px(center - 55), width: px(110), top: px(19), alignItems: 'center' }}>
+          <Pressable key={label} onPress={() => navigation.navigate('ProfileList', { kind: label === 'Visitors' ? 'visitors' : label === 'Followers' ? 'followers' : 'following' })} style={{ position: 'absolute', left: px(center - 55), width: px(110), top: px(19), alignItems: 'center' }}>
             <Text style={[styles.medium, { fontSize: px(19), color: colors.black }]}>{value ?? 0}</Text>
             <Text style={[styles.medium, { marginTop: px(4), fontSize: px(14), color: 'rgba(0,0,0,0.4)' }]}>{label}</Text>
           </Pressable>
@@ -131,7 +166,7 @@ export default function ProfileScreen() {
       </View>
 
       {/* Frame 1597881237 — the VIP banner, half under the wallet. */}
-      <Pressable onPress={() => soon('VIP')} style={{ position: 'absolute', left: px(31.5), top: px(400), width: px(339), height: px(151), borderRadius: px(12), borderWidth: 1, borderColor: 'rgba(0,0,0,0.23)', backgroundColor: colors.black, overflow: 'hidden' }}>
+      <Pressable onPress={() => navigation.navigate('VipPrivileges')} style={{ position: 'absolute', left: px(31.5), top: px(400), width: px(339), height: px(151), borderRadius: px(12), borderWidth: 1, borderColor: 'rgba(0,0,0,0.23)', backgroundColor: colors.black, overflow: 'hidden' }}>
         <Image source={require('../../assets/profile/vip-banner.jpg')} resizeMode="cover" style={{ position: 'absolute', left: px(-1), top: px(-29), width: px(331), height: px(121) }} />
         <Svg width={px(70)} height={px(36)} style={{ position: 'absolute', left: px(9), top: px(10) }}>
           <Defs>
@@ -156,12 +191,12 @@ export default function ProfileScreen() {
       {/* Frame 1597881236 — My Wallet. */}
       <View style={[{ position: 'absolute', left: px(16), top: px(452), width: px(370), height: px(149), borderRadius: px(12), borderWidth: 1.3, borderColor: 'rgba(0,0,0,0.23)', backgroundColor: colors.white }, shadow(0.11, 12.2)]}>
         <Text style={[styles.medium, { position: 'absolute', left: px(14), top: px(17.7), fontSize: px(13), color: colors.black }]}>My Wallet</Text>
-        <WalletTile x={13.7} image={require('../../assets/profile/coin-card.jpg')} label="Coin" value={wallet?.coin_balance} onPress={() => soon('Recharge')}>
+        <WalletTile x={13.7} image={require('../../assets/profile/coin-card.jpg')} label="Coin" value={wallet?.coin_balance} onPress={() => navigation.navigate('Wallet')}>
           <View style={{ position: 'absolute', left: px(118), top: px(14), width: px(34), height: px(24), overflow: 'hidden' }}>
             <Image source={require('../../assets/profile/coin-icon.png')} style={{ position: 'absolute', left: px(34 * 0.0196), width: px(34 * 0.9408), height: px(24) }} />
           </View>
         </WalletTile>
-        <WalletTile x={195.7} image={require('../../assets/profile/earn-card.jpg')} label="Earnings" value={wallet?.diamond_balance} labelX={11} labelY={20} valueY={42} onPress={() => soon('Earnings')}>
+        <WalletTile x={195.7} image={require('../../assets/profile/earn-card.jpg')} label="Earnings" value={wallet?.diamond_balance} labelX={11} labelY={20} valueY={42} onPress={() => navigation.navigate('Wallet', { tab: 'diamonds' })}>
           <View style={{ position: 'absolute', left: px(116), top: px(27), width: px(29), height: px(24), overflow: 'hidden' }}>
             <Image source={require('../../assets/profile/diamond.png')} style={{ position: 'absolute', left: px(-6.9), top: px(-9.1), width: px(42.8), height: px(41.3) }} />
           </View>
@@ -175,7 +210,7 @@ export default function ProfileScreen() {
           ['Item Bag', require('../../assets/profile/item-bag.jpg'), { left: -4, top: -2, size: 70 }],
           ['CP', require('../../assets/profile/cp.png'), { left: 3, top: 3, size: 59 }],
         ] as const).map(([label, image, at]) => (
-          <Pressable key={label} onPress={() => soon(label)} style={{ width: px(67), alignItems: 'center', gap: px(11) }}>
+          <Pressable key={label} onPress={() => (label === 'Item Bag' ? navigation.navigate('ItemBag') : label === 'CP' ? navigation.navigate('CpRanking') : soon(label))} style={{ width: px(67), alignItems: 'center', gap: px(11) }}>
             <View style={[{ width: px(67), height: px(67), borderRadius: px(11), borderWidth: 1, borderColor: 'rgba(0,0,0,0.25)', backgroundColor: colors.white, overflow: 'hidden' }, { shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: px(4.5), shadowOffset: { width: px(2), height: px(4) }, elevation: 3 }]}>
               <Image source={image} resizeMode="cover" style={{ position: 'absolute', left: px(at.left), top: px(at.top), width: px(at.size), height: px(at.size) }} />
             </View>
@@ -186,12 +221,12 @@ export default function ProfileScreen() {
 
       {/* Frame 1597881242 / 1597881243 — the two lists. */}
       <MenuCard top={808} height={280} left={20} rowTop={24}>
-        <MenuRow icon={<CropIcon source={require('../../assets/profile/store.png')} box={26} at={{ left: -4.8, top: -4.6, width: 33.5, height: 34.4 }} />} gap={5} label="Store" onPress={() => soon('Store')} />
-        <MenuRow icon={<RoundIcon source={require('../../assets/profile/row-icon.jpg')} size={28} border="rgba(0,0,0,0.17)" />} gap={5} label="Medals" onPress={() => soon('Medals')} />
-        <MenuRow icon={<RoundIcon source={require('../../assets/profile/row-icon.jpg')} size={28} border="rgba(0,0,0,0.17)" />} gap={5} label="Level" onPress={() => soon('Level')} />
+        <MenuRow icon={<CropIcon source={require('../../assets/profile/store.png')} box={26} at={{ left: -4.8, top: -4.6, width: 33.5, height: 34.4 }} />} gap={5} label="Store" onPress={() => navigation.navigate('Store')} />
+        <MenuRow icon={<RoundIcon source={require('../../assets/profile/row-icon.jpg')} size={28} border="rgba(0,0,0,0.17)" />} gap={5} label="Medals" onPress={() => navigation.navigate('Medals')} />
+        <MenuRow icon={<RoundIcon source={require('../../assets/profile/row-icon.jpg')} size={28} border="rgba(0,0,0,0.17)" />} gap={5} label="Level" onPress={() => navigation.navigate('Level')} />
         <MenuRow icon={<RoundIcon source={require('../../assets/profile/row-icon.jpg')} size={28} border="rgba(0,0,0,0.17)" />} gap={5} label="Join Agency" onPress={() => soon('Join Agency')} />
         <MenuRow icon={<SvgXml xml={icons.micVocal} width={px(21)} height={px(21)} />} gap={11} label="Host Center" onPress={() => soon('Host Center')} />
-        <MenuRow icon={<SvgXml xml={icons.micVocal} width={px(21)} height={px(21)} />} gap={11} label="Invite Reward" onPress={() => soon('Invite Reward')} />
+        <MenuRow icon={<SvgXml xml={icons.micVocal} width={px(21)} height={px(21)} />} gap={11} label="Invite Reward" onPress={() => navigation.navigate('InviteReward')} />
       </MenuCard>
       <MenuCard top={1101} height={118} left={22} rowTop={23}>
         <MenuRow icon={<RoundIcon source={require('../../assets/profile/row-icon.jpg')} size={28} border="rgba(0,0,0,0.17)" />} gap={5} label="Contact" onPress={() => soon('Contact')} />
@@ -199,12 +234,7 @@ export default function ProfileScreen() {
           icon={<RoundIcon source={require('../../assets/profile/settings.jpg')} size={27} border="rgba(0,0,0,0.28)" />}
           gap={9}
           label="Settings"
-          onPress={() =>
-            Alert.alert('Settings', undefined, [
-              { text: 'Sign out', style: 'destructive', onPress: signOut },
-              { text: 'Cancel', style: 'cancel' },
-            ])
-          }
+          onPress={() => navigation.navigate('Settings')}
         />
       </MenuCard>
 

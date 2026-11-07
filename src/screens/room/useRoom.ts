@@ -4,6 +4,10 @@ import { AppState } from 'react-native';
 import { api, ApiError } from '../../api/client';
 import { getEcho } from '../../api/realtime';
 import { useAuth } from '../../auth/AuthContext';
+import type { AvatarFrame } from '../../components/UserAvatar';
+
+/** One worn Item Bag piece, as `SocialPresenter::cosmetics()` sends it. */
+export type Cosmetic = AvatarFrame & { name?: string };
 
 /** `SocialPresenter::user()`. */
 export type RoomUser = {
@@ -11,7 +15,14 @@ export type RoomUser = {
   guftagu_id?: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  /** The frame they wear from the Item Bag; null when none. */
+  frame?: AvatarFrame | null;
+  /** Chat bubble, voice wave, profile card and floating-screen skin they wear; null when none. */
+  cosmetics?: { bubble?: Cosmetic; mic_wave?: Cosmetic; profile_card?: Cosmetic; floating_screen?: Cosmetic } | null;
   country?: string | null;
+  /** Wealth / charm levels, for the grade medals beside the name in chat. */
+  wealth_level?: number;
+  charm_level?: number;
 };
 
 export type Seat = {
@@ -42,6 +53,10 @@ export type RoomSnapshot = {
     theme: { background_url: string | null } | null;
     /** The host's own upload, else the theme's picture. */
     background_url: string | null;
+    cover_url?: string | null;
+    /** Which Room Mode and Room Theme cards the host's sheets show as current. */
+    seat_template_id?: number | null;
+    theme_id?: number | null;
   };
   owner: RoomUser | null;
   members: RoomUser[];
@@ -66,7 +81,7 @@ export type RoomSnapshot = {
 /** `InventoryService::arrival()` — what plays when somebody walks in. */
 export type Arrival = {
   vip: { level: number; name: string } | null;
-  banner: { name: string; image_url: string | null } | null;
+  banner: { name: string; image_url: string | null; animation_url?: string | null } | null;
   effect: {
     name: string;
     image_url: string | null;
@@ -172,6 +187,7 @@ export function useRoom(uuid: string) {
   }, [path, token]);
 
   const refreshGiftsRef = useRef<() => void>(() => undefined);
+  const refreshStateRef = useRef<() => void>(() => undefined);
   const refreshGifts = useCallback(async () => {
     try {
       const rows = await api<GiftEvent[]>(`${path}/gifts`, { token });
@@ -289,6 +305,9 @@ export function useRoom(uuid: string) {
       // One active roll per player: a new one replaces theirs.
       setCasuals((q) => [...q.filter((c) => c.user?.uuid !== e.user.uuid), { id, user: e.user, type: e.type, result: e.result }]);
     });
+    // The host changed Room Mode (everyone stood up, seats re-laid) or Room Theme
+    // (background only): re-read the room now rather than at the next poll.
+    channel.listen('.room.updated', () => refreshStateRef.current());
     channel.listen('.member.left', (e: { listener_count: number }) => {
       setSnapshot((prev) => (prev ? { ...prev, room: { ...prev.room, listener_count: e.listener_count } } : prev));
     });
@@ -346,6 +365,7 @@ export function useRoom(uuid: string) {
   );
 
   refreshGiftsRef.current = refreshGifts;
+  refreshStateRef.current = refreshState;
   const meRef = useRef<string | undefined>(undefined);
   meRef.current = user?.uuid;
   const pushGift = useCallback((hits: GiftHit[]) => setGiftFeed((f) => [...f.slice(-30), ...hits]), []);
@@ -392,6 +412,10 @@ export function useRoom(uuid: string) {
     lockSeat: (seat: number, locked: boolean) => act(`/seats/${seat}/lock`, 'PATCH', { locked }),
     kick: (userUuid: string, minutes: number) => act(`/members/${userUuid}/kick`, 'POST', { minutes }),
     leave: () => api(`${path}/leave`, { method: 'POST', token }),
+    /** Room Mode: another seat template; every seat is emptied. */
+    changeMode: (seatTemplateId: number) => act('/mode', 'PATCH', { seat_template_id: seatTemplateId }),
+    /** Room Theme: a catalogue theme, or the host's own uploaded picture. */
+    changeTheme: (pick: { theme_id: number } | { background_url: string }) => act('/theme', 'PATCH', pick),
     sendMessage,
     sendGift,
     clearChat,

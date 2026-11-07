@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Image, type ImageSourcePropType } from 'react-native';
 
 import { api, ApiError } from '../../api/client';
@@ -35,6 +35,7 @@ export const art = {
   // Same bitmaps as Weekly Star's tiles and coin stack.
   tile: require('../../assets/weekly-star/item-tile.png'),
   coins: require('../../assets/weekly-star/reward-coins.png'),
+  diamonds: require('../../assets/home/reward-diamonds.png'),
   avatarMale: require('../../assets/avatar-male.png'),
   avatarFemale: require('../../assets/avatar-female.png'),
 };
@@ -48,26 +49,36 @@ export function compact(n: number) {
 
 /**
  * `GET /rankings?board=&period=`. A board with no rule configured (monthly, today)
- * answers 404, which is an empty board here rather than an error.
+ * answers 404, which is an empty board here rather than an error. `reload` is for
+ * pull-to-refresh: it keeps the current board on screen until the new one lands.
  */
 export function useBoard(board: Board, period: Period) {
   const { token } = useAuth();
   const [entries, setEntries] = useState<RankingEntry[]>([]);
 
+  const fetchBoard = useCallback(
+    () =>
+      api<{ entries: RankingEntry[] }>(`/rankings?board=${board}&period=${period}`, { token })
+        .then((data) => data.entries)
+        .catch((e): RankingEntry[] => {
+          if (!(e instanceof ApiError)) throw e;
+          return [];
+        }),
+    [board, period, token],
+  );
+
   useEffect(() => {
     let live = true;
     setEntries([]);
-    api<{ entries: RankingEntry[] }>(`/rankings?board=${board}&period=${period}`, { token })
-      .then((data) => live && setEntries(data.entries))
-      .catch((e) => {
-        if (!(e instanceof ApiError)) throw e;
-      });
+    fetchBoard().then((next) => live && setEntries(next));
     return () => {
       live = false;
     };
-  }, [board, period, token]);
+  }, [fetchBoard]);
 
-  return entries;
+  const reload = useCallback(() => fetchBoard().then(setEntries), [fetchBoard]);
+
+  return { entries, reload };
 }
 
 /** Seconds to the weekly board's close — Carbon's end of week, Sunday 23:59:59 UTC. */

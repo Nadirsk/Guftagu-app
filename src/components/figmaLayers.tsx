@@ -36,7 +36,7 @@ export function Img({
 }: {
   source: ImageSourcePropType;
   box: Box;
-  resizeMode?: 'stretch' | 'cover';
+  resizeMode?: 'stretch' | 'cover' | 'contain';
   radius?: number;
   opacity?: number;
 }) {

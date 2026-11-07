@@ -11,7 +11,6 @@ import {
   Share,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SvgXml } from 'react-native-svg';
@@ -30,7 +29,6 @@ import {
   KICKOUT,
   KICKOUT_CHOICES,
   LEAVE,
-  MUSIC,
   SHARE,
   TOOLS,
 } from './geometry';
@@ -269,13 +267,14 @@ export function RoomDrawer({
 
 // ---------------------------------------------------------------- 280:5181
 
-export type ToolKey = 'clear' | 'theme' | 'sound' | 'music' | 'kick' | 'mute' | 'lock' | 'redPacket' | 'luckyDraw' | 'luckyNumber';
+export type ToolKey = 'clear' | 'theme' | 'mode' | 'sound' | 'music' | 'kick' | 'mute' | 'lock' | 'redPacket' | 'luckyDraw' | 'luckyNumber';
 
 const TOOL_ROWS: { key: ToolKey; label: string; xml: string; size: number }[][] = [
   [
     { key: 'clear', label: 'Clear chat', xml: icons.toolBrush, size: 17 },
     { key: 'theme', label: 'Room Theme', xml: icons.toolTheme, size: 16 },
-    { key: 'sound', label: 'Sound Effect', xml: icons.toolSound, size: 16 },
+    // 280:5055 puts Room Mode where Sound Effect was (that one only ever said "Coming soon").
+    { key: 'mode', label: 'Room Mode', xml: icons.toolHouse, size: 16 },
   ],
   [
     { key: 'music', label: 'Music', xml: icons.toolMusic, size: 17 },
@@ -716,39 +715,7 @@ function Coin({ size }: { size: number }) {
  * Music: PlayList / Local and the search pill. Figma's list is a phone
  * screenshot; there is no song source behind it yet, so the list says so.
  */
-export function MusicSheet({ extra, onClose }: { extra: number; onClose: () => void }) {
-  const { px } = useDesignScale();
-  const [tab, setTab] = useState<'PlayList' | 'Local'>('Local');
-  const [query, setQuery] = useState('');
-  const m = MUSIC;
 
-  return (
-    <View style={StyleSheet.absoluteFill}>
-      <Backdrop dim="rgba(16,19,23,0.8)" onClose={onClose} />
-      <View style={{ position: 'absolute', left: 0, right: 0, top: px(m.y + extra), bottom: 0, backgroundColor: colors.white, borderTopLeftRadius: px(m.radius), borderTopRightRadius: px(m.radius) }}>
-        <View style={{ position: 'absolute', top: px(m.handle.y), left: px((402 - m.handle.width) / 2), width: px(m.handle.width), height: px(m.handle.height), borderRadius: px(15), backgroundColor: '#D9D9D9' }} />
-        {(['PlayList', 'Local'] as const).map((t) => (
-          <Pressable key={t} onPress={() => setTab(t)} style={{ position: 'absolute', top: px(m.tabs.y), left: px((t === 'PlayList' ? m.tabs.playlistX : m.tabs.localX) - m.tabs.width / 2), width: px(m.tabs.width) }}>
-            <Text style={[styles.medium, { fontSize: px(m.tabs.size), textAlign: 'center', color: tab === t ? colors.black : 'rgba(0,0,0,0.5)' }]}>{t}</Text>
-          </Pressable>
-        ))}
-        <View style={{ position: 'absolute', left: px(m.search.x), top: px(m.search.y), width: px(m.search.width), height: px(m.search.height), borderRadius: px(30), backgroundColor: '#E5E5E5', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', flexDirection: 'row', alignItems: 'center', paddingLeft: px(19), gap: px(m.search.gap) }}>
-          <SvgXml xml={icons.search} width={px(m.search.icon)} height={px(m.search.icon)} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Please Search the music name"
-            placeholderTextColor="rgba(124,121,121,0.4)"
-            style={[styles.medium, { flex: 1, fontSize: px(m.search.size), color: '#7C7979', padding: 0 }]}
-          />
-        </View>
-        <Text style={[styles.regular, { position: 'absolute', left: 0, right: 0, top: px(m.list.y + 40), textAlign: 'center', fontSize: px(13), color: 'rgba(0,0,0,0.4)' }]}>
-          {tab === 'PlayList' ? 'Your playlist is empty' : 'No music on this device yet'}
-        </Text>
-      </View>
-    </View>
-  );
-}
 
 // ---------------------------------------------------------------- Group 8778
 

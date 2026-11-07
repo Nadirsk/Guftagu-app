@@ -7,6 +7,7 @@ import { SvgXml } from 'react-native-svg';
 
 import { api, ApiError } from '../../api/client';
 import * as icons from '../../assets/home/icons';
+import { useFullAccess } from '../../auth/access';
 import { storage, useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
 import { useDesignScale } from '../../theme/layout';
@@ -46,6 +47,8 @@ export default function HomeFeedScreen({ onOpenExplore }: { onOpenExplore?: () =
   const { px } = useDesignScale();
   const navigation = useNavigation<NavigationProp>();
   const { user, token } = useAuth();
+  // View-only accounts see Home but nothing on it opens another screen.
+  const fullAccess = useFullAccess();
   const navHeight = useBottomNavHeight();
   const [tab, setTab] = useState<TabName>('For You');
   const chatting = useRef(false);
@@ -57,7 +60,7 @@ export default function HomeFeedScreen({ onOpenExplore }: { onOpenExplore?: () =
       chatting.current = true;
       try {
         const conversation = await openThread(token, author);
-        navigation.navigate('Conversation', { uuid: conversation.uuid, peer: author });
+        navigation.navigate('Conversation', { uuid: conversation.uuid, peer: author, alias: conversation.alias });
       } catch (e) {
         Alert.alert('Chat', e instanceof ApiError ? e.displayMessage : 'Could not open the chat.');
       } finally {
@@ -98,6 +101,7 @@ export default function HomeFeedScreen({ onOpenExplore }: { onOpenExplore?: () =
 
   // The popup is the server's streak calendar, shown only while today's reward is unclaimed.
   useEffect(() => {
+    if (!fullAccess) return;
     let cancelled = false;
     api<{ claimed_today: boolean; week: CheckinDay[] }>('/checkin', { token })
       .then((s) => {
@@ -107,7 +111,7 @@ export default function HomeFeedScreen({ onOpenExplore }: { onOpenExplore?: () =
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, fullAccess]);
 
   // "Active Now" — people who made a request in the last few minutes. Refreshed
   // while the screen is focused.
@@ -151,7 +155,7 @@ export default function HomeFeedScreen({ onOpenExplore }: { onOpenExplore?: () =
   } else if (tab === 'Live') {
     body = (
       <View style={{ height: px(LIVE_CARD.y - POST.y + LIVE_CARD.height) }}>
-        <HeroCard originY={POST.y} onPress={onOpenExplore} />
+        <HeroCard originY={POST.y} onPress={fullAccess ? onOpenExplore : undefined} />
       </View>
     );
   } else if (feed && feed.posts.length > 0) {
@@ -169,15 +173,17 @@ export default function HomeFeedScreen({ onOpenExplore }: { onOpenExplore?: () =
               following={author ? follow.followed[author.uuid] ?? false : false}
               followBusy={author ? follow.busy[author.uuid] ?? false : false}
               onToggleFollow={() => {
-                if (author) follow.toggle(author);
+                if (fullAccess && author) follow.toggle(author);
               }}
               onChat={() => {
-                if (author) openChat(author);
+                if (fullAccess && author) openChat(author);
               }}
-              onOpen={() => navigation.navigate('PostDetails', { post, following: !isForYou })}
-              onOpenMedia={(index) =>
-                navigation.navigate('MediaViewer', { urls: post.media_urls ?? [], index })
-              }
+              onOpen={() => {
+                if (fullAccess) navigation.navigate('PostDetails', { post, following: !isForYou });
+              }}
+              onOpenMedia={(index) => {
+                if (fullAccess) navigation.navigate('MediaViewer', { urls: post.media_urls ?? [], index });
+              }}
             />
           );
         })}
@@ -224,14 +230,14 @@ export default function HomeFeedScreen({ onOpenExplore }: { onOpenExplore?: () =
       >
         {/* The header block; its backdrop runs on underneath the tab body. */}
         <View style={{ height: px(POST.y), zIndex: 0 }}>
-          <HomeHeader online={online} rankingFaces={boards.ranking} weeklyStarFaces={boards.weeklyStar} />
+          <HomeHeader interactive={fullAccess} online={online} rankingFaces={boards.ranking} weeklyStarFaces={boards.weeklyStar} />
           <TabRow tab={tab} onSelect={setTab} />
         </View>
         {body}
       </ScrollView>
 
       {/* For You only. Floats over the feed, a fixed 56px above the bar; under the rewards popup. */}
-      {tab === 'For You' ? (
+      {tab === 'For You' && fullAccess ? (
         <Pressable
           onPress={() => navigation.navigate('PostMoment')}
           hitSlop={px(6)}

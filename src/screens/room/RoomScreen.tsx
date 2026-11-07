@@ -1,5 +1,6 @@
 import { type RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -22,19 +23,22 @@ import {
 import { Crown } from 'lucide-react-native';
 import { SvgXml } from 'react-native-svg';
 
-import { api, ApiError } from '../../api/client';
+import { api, ApiError, uploadFile } from '../../api/client';
+import { type ChatUser, openThread } from '../chats/parts';
 import * as icons from '../../assets/room/icons';
 import { useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
+import { type RoomRuntime, useRoomRuntime, useRoomSession } from './RoomSession';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
+import { LevelBadges } from '../level/LevelBadge';
+import { MicWave, NineSlice, ProfileCardSheet } from './Cosmetics';
 import { EnteringOverlay, EntranceBanner } from './EntryEffects';
 import { ActionPill, AnnouncementDialog, BottomBar, ChatBar, ClearDialog, type ChatTab, HostMenu, type HostMenuKey, LockGlyph, PowerOverlay, TopRoomPill, ViewersPill } from './RoomChrome';
 import { SeatMenu } from './SeatMenu';
 import { CASUAL_FACES, CasualBubble, Composer, EmojiSheet } from './EmojiSheet';
 import { emojiSource } from '../../assets/room/emoji';
 import { ComboButton, GiftFx } from './GiftFx';
-import { useVoice } from './voice';
 import { LuckyWheelSheet } from './wheel';
 import { claimShare, EnvelopeClaimedPopup, EnvelopeOpenPopup, EnvelopeSheet, EnvelopeTile, type RedEnvelope } from './envelope';
 import {
@@ -58,13 +62,15 @@ import {
   GiftSheet,
   KickoutSheet,
   LeaveDialog,
-  MusicSheet,
   RoomDrawer,
   ShareSheet,
   type ToolKey,
   ToolsSheet,
 } from './sheets';
-import { type ChatMessage, type GiftEvent, type RoomUser, type Seat, useRoom } from './useRoom';
+import { type ChatMessage, type GiftEvent, type RoomUser, type Seat } from './useRoom';
+import { UserAvatar } from '../../components/UserAvatar';
+import { RoomModeSheet, RoomThemeSheet, type SeatTemplate } from './roomSettings';
+import { MusicSheet } from './musicSheet';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -84,8 +90,11 @@ type Overlay =
   | { kind: 'tools' }
   | { kind: 'kickout'; user: RoomUser }
   | { kind: 'seatMenu' }
+  | { kind: 'profileCard'; user: RoomUser }
   | { kind: 'gifts'; receiver: RoomUser | 'all' | null }
   | { kind: 'music' }
+  | { kind: 'mode' }
+  | { kind: 'theme' }
   | { kind: 'share' }
   | { kind: 'games' }
   | { kind: 'envelope' }
@@ -112,14 +121,49 @@ type SeatMode = 'kick' | 'mute' | 'lock' | null;
  */
 const SIDE_DOWN = 55;
 
+/**
+ * The room's state, voice and music live in `RoomSession`'s host, above the navigator, so they keep
+ * running while this screen is closed (Back / Minimize). This wrapper makes the opened room the
+ * live one and draws the screen once the host has it.
+ */
 export default function RoomScreen() {
+  const { params } = useRoute<RouteProp<RootStackParamList, 'Room'>>();
+  const session = useRoomSession();
+  const rt = useRoomRuntime();
+
+  useEffect(() => {
+    session.enter(params.uuid);
+    // `enter` only needs to run when the opened room changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.uuid]);
+
+  if (!rt || rt.uuid !== params.uuid) return <View style={{ flex: 1, backgroundColor: '#000' }} />;
+  return <RoomScreenBody rt={rt} />;
+}
+
+function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
   const { px, ratio } = useDesignScale();
   const { height } = useWindowDimensions();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Room'>>();
   const { token } = useAuth();
-  const room = useRoom(params.uuid);
+  const { room, voice, music, speakerOff, setSpeakerOff } = rt;
   const { snapshot } = room;
+
+  // Back / Minimize keeps you in the room: the pill takes over. Exit (the dialog), a dead room and
+  // hopping to another room set `leftRef` or arrive as a REPLACE and do not.
+  const session = useRoomSession();
+  const leftRef = useRef(false);
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', (e) => {
+        if (e.data.action.type === 'REPLACE') return;
+        if (!leftRef.current) session.minimize();
+      }),
+    // Registered once per opening of the room.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   /** How much taller than the 874 frame this phone is — the bottom half moves down by it. */
   const extra = Math.max(0, height / ratio - FRAME.height);
@@ -143,7 +187,6 @@ export default function RoomScreen() {
     return () => { show.remove(); hide.remove(); };
   }, []);
   const [recentEmoji, setRecentEmoji] = useState(['😍', '😊', '😃', '🤫', '😘']);
-  const [speakerOff, setSpeakerOff] = useState(false);
   const [followed, setFollowed] = useState(false);
   const [leaving, setLeaving] = useState(false);
   // Section 575:2742. Kept on this screen only: the server has no red envelopes yet.
@@ -152,24 +195,14 @@ export default function RoomScreen() {
 
   useEffect(() => {
     if (!room.fatal) return;
-    Alert.alert('Room', room.fatal, [{ text: 'OK', onPress: () => navigation.goBack() }]);
+    leftRef.current = true;
+    Alert.alert('Room', room.fatal, [{ text: 'OK', onPress: () => { session.end(); navigation.goBack(); } }]);
   }, [navigation, room.fatal]);
 
   const isHost = snapshot?.my.is_host ?? false;
   const me = room.me;
   const seats = snapshot?.seats ?? [];
   const mySeat = seats.find((x) => x.user?.uuid === me?.uuid) ?? null;
-  const voice = useVoice({
-    roomUuid: params.uuid,
-    token,
-    meUuid: me?.uuid,
-    seated: seats.flatMap((x) => (x.user ? [{ seat: x.seat_number, uuid: x.user.uuid }] : [])),
-    // `muted` on a seat already folds in the host's mute, not only my own.
-    micOpen: Boolean(mySeat && !mySeat.muted),
-    speakerOff,
-    iceServers: snapshot?.signaling?.ice_servers ?? [{ urls: 'stun:stun.l.google.com:19302' }],
-    ready: Boolean(snapshot),
-  });
   // Mazag's first seat row sits ~11 px under the "Top Room" pill, so the whole block rides up.
   const spots = useMemo(() => seatSpots(seats.length).map((s) => ({ ...s, y: s.y + SEAT_LIFT, labelY: s.labelY + SEAT_LIFT })), [seats.length]);
   // Everything from the notice down follows the last row of seats.
@@ -241,11 +274,13 @@ export default function RoomScreen() {
       return;
     }
     const user = seat.user;
+    // Mazag: tapping somebody's seat opens their card, and Gift is a button on it.
     if (!isHost) {
-      setOverlay({ kind: 'gifts', receiver: user });
+      setOverlay({ kind: 'profileCard', user });
       return;
     }
     Alert.alert(user.display_name ?? 'Guftagu user', undefined, [
+      { text: 'View profile card', onPress: () => setOverlay({ kind: 'profileCard', user }) },
       { text: 'Send a gift', onPress: () => setOverlay({ kind: 'gifts', receiver: user }) },
       { text: seat.muted ? 'Unmute' : 'Mute', onPress: () => run(() => room.muteSeat(seat.seat_number, !seat.muted)) },
       { text: 'Kick out', style: 'destructive', onPress: () => setOverlay({ kind: 'kickout', user }) },
@@ -260,6 +295,12 @@ export default function RoomScreen() {
       toast.show('Chat cleared');
     } else if (key === 'music') {
       setOverlay({ kind: 'music' });
+    } else if (key === 'mode' || key === 'theme') {
+      if (!isHost) {
+        toast.show('Only the host can do that');
+        return;
+      }
+      setOverlay({ kind: key });
     } else if (key === 'redPacket') {
       setOverlay({ kind: 'envelope' });
     } else if (key === 'kick' || key === 'mute' || key === 'lock') {
@@ -272,6 +313,55 @@ export default function RoomScreen() {
       toast.show(key === 'kick' ? 'Tap a seat to kick that person out' : key === 'mute' ? 'Tap a seat to mute or unmute it' : 'Tap a seat to lock or unlock it');
     } else {
       toast.show('Coming soon');
+    }
+  };
+
+  // ---- Tools → Room Mode / Room Theme
+  const [settingsBusy, setSettingsBusy] = useState(false);
+
+  /** A new seat layout stands everyone up (the host too), so ask first when anyone is seated. */
+  const pickMode = (t: SeatTemplate) => {
+    if (t.id === snapshot?.room.seat_template_id) {
+      setOverlay(null);
+      return;
+    }
+    const apply = async () => {
+      setSettingsBusy(true);
+      await run(() => room.changeMode(t.id), `Room mode: ${t.total_seats} Mic`);
+      setSettingsBusy(false);
+      setOverlay(null);
+    };
+    const seated = seats.filter((s) => s.user).length;
+    if (!seated) return apply();
+    Alert.alert(
+      'Change room mode?',
+      `${seated === 1 ? 'The person' : `All ${seated} people`} on a seat will be moved off — they stay in the room.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Change', onPress: apply },
+      ],
+    );
+  };
+
+  /** Background only — nobody moves; the sheet stays open to try another. */
+  const pickTheme = async (pick: { theme_id: number } | { background_url: string }) => {
+    setSettingsBusy(true);
+    await run(() => room.changeTheme(pick), 'Room theme changed');
+    setSettingsBusy(false);
+  };
+
+  const uploadTheme = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
+    if (result.canceled || !result.assets[0]) return;
+    const a = result.assets[0];
+    if (a.fileSize && a.fileSize > 10 * 1024 * 1024) return toast.show('That picture is larger than 10 MB.');
+    setSettingsBusy(true);
+    try {
+      const { url } = await uploadFile<{ url: string }>('/media', { uri: a.uri, mime: a.mimeType ?? 'image/jpeg' }, token);
+      await pickTheme({ background_url: url });
+    } catch (e) {
+      setSettingsBusy(false);
+      toast.show(e instanceof ApiError ? e.displayMessage : 'Could not upload the picture.');
     }
   };
 
@@ -300,12 +390,14 @@ export default function RoomScreen() {
     }, 'Following');
 
   const leave = async () => {
+    leftRef.current = true;
     setLeaving(true);
     try {
       await room.leave();
     } catch {
       // Leaving is best-effort; the server times idle members out anyway.
     }
+    session.end();
     navigation.goBack();
   };
 
@@ -348,8 +440,9 @@ export default function RoomScreen() {
           backgroundColor: 'rgba(45,34,28,0.6)',
         }}
       />
+      {/* The Party list's own picture for this room: its cover, else the owner's photo - no frame. */}
       <Image
-        source={avatarOf(snapshot?.owner)}
+        source={snapshot?.room.cover_url ? { uri: snapshot.room.cover_url } : avatarOf(snapshot?.owner)}
         style={{
           position: 'absolute',
           left: px(OWNER.avatar.x),
@@ -394,7 +487,7 @@ export default function RoomScreen() {
           spot={spots[i]}
           mine={seat.user?.uuid === me?.uuid}
           picking={seatMode !== null}
-          speaking={Boolean(seat.user && !seat.muted && voice.speaking.has(seat.user.uuid))}
+          speaking={Boolean(seat.user && voice.speaking.has(seat.user.uuid))}
           invite={!mySeat && seat.seat_number === inviteSeat}
           onPress={() => onSeat(seat)}
         />
@@ -583,8 +676,8 @@ export default function RoomScreen() {
         <SeatMenu
           onClose={() => setOverlay(null)}
           onProfile={() => {
-            setOverlay(null);
-            toast.show('Coming soon');
+            const mineUser = seats.find((s) => s.user?.uuid === me?.uuid)?.user;
+            setOverlay(mineUser ? { kind: 'profileCard', user: mineUser } : null);
           }}
           onLeave={() => {
             setOverlay(null);
@@ -593,6 +686,27 @@ export default function RoomScreen() {
           onGift={() => setOverlay({ kind: 'gifts', receiver: giftReceiver() })}
         />
       ) : null}
+      {overlay?.kind === 'profileCard' ? <ProfileCardSheet
+          user={overlay.user}
+          mine={overlay.user.uuid === me?.uuid}
+          onClose={() => setOverlay(null)}
+          onGift={() => setOverlay({ kind: 'gifts', receiver: giftReceiver(overlay.user) })}
+          onChat={async () => {
+            const peer = overlay.user;
+            setOverlay(null);
+            try {
+              const c = await openThread(token, { uuid: peer.uuid, display_name: peer.display_name, avatar_url: peer.avatar_url } as ChatUser);
+              navigation.navigate('Conversation', { uuid: c.uuid, peer: { uuid: peer.uuid, display_name: peer.display_name, avatar_url: peer.avatar_url } as ChatUser });
+            } catch (e) {
+              toast.show(e instanceof ApiError ? e.displayMessage : 'Could not open the chat.');
+            }
+          }}
+          onFollow={() => {
+            const who = overlay.user.uuid;
+            setOverlay(null);
+            run(() => api(`/users/${who}/follow`, { method: 'POST', token }), 'Followed');
+          }}
+        /> : null}
       {overlay?.kind === 'leave' ? <LeaveDialog busy={leaving} onCancel={() => setOverlay(null)} onConfirm={leave} /> : null}
       {overlay?.kind === 'tools' ? <ToolsSheet extra={extra} onClose={() => setOverlay(null)} onPick={onTool} /> : null}
       {overlay?.kind === 'wheel' ? (
@@ -654,7 +768,7 @@ export default function RoomScreen() {
           onSend={(gift, quantity, targets) => {
             const to = targets === 'all' ? seats.flatMap((s) => (s.user && s.user.uuid !== me?.uuid ? [s.user] : [])) : targets;
             const batch = to.length > 1 ? `local-${Date.now()}` : null;
-            const mine: RoomUser | null = me ? { uuid: me.uuid, display_name: me.display_name ?? null, avatar_url: me.avatar_url ?? null } : null;
+            const mine: RoomUser | null = me ? (seats.find((s) => s.user?.uuid === me.uuid)?.user ?? (snapshot?.owner?.uuid === me.uuid ? snapshot.owner : null)) ?? { uuid: me.uuid, display_name: me.display_name ?? null, avatar_url: me.avatar_url ?? null } : null;
             // Mazag plays it the instant you tap: close the sheet, draw the gift, settle the bill after.
             room.pushGift(
               to.map((u, i) => ({
@@ -676,7 +790,24 @@ export default function RoomScreen() {
           }}
         />
       ) : null}
-      {overlay?.kind === 'music' ? <MusicSheet extra={extra} onClose={() => setOverlay(null)} /> : null}
+      {overlay?.kind === 'music' ? (
+        <MusicSheet extra={extra} music={music} seated={Boolean(mySeat)} onToast={toast.show} onClose={() => setOverlay(null)} />
+      ) : null}
+      {overlay?.kind === 'mode' ? (
+        <RoomModeSheet extra={extra} current={snapshot?.room.seat_template_id} busy={settingsBusy} onPick={pickMode} onClose={() => setOverlay(null)} />
+      ) : null}
+      {overlay?.kind === 'theme' ? (
+        <RoomThemeSheet
+          extra={extra}
+          currentThemeId={snapshot?.room.theme_id}
+          currentBackground={snapshot?.room.background_url}
+          busy={settingsBusy}
+          onPickTheme={(t) => pickTheme({ theme_id: t.id })}
+          onPickOwned={(url) => pickTheme({ background_url: url })}
+          onUpload={uploadTheme}
+          onClose={() => setOverlay(null)}
+        />
+      ) : null}
       {overlay?.kind === 'share' ? (
         <ShareSheet
           extra={extra}
@@ -710,7 +841,14 @@ function SeatView({ seat, spot, mine, picking, speaking, invite, onPress }: { se
 
   return (
     <>
-      {speaking ? <SpeakingRipple x={spot.x} y={spot.y} size={spot.ring} /> : null}
+      {speaking ? (
+        // A worn voice wave replaces the plain white ripple, as in Mazag.
+        seat.user?.cosmetics?.mic_wave ? (
+          <MicWave x={spot.x} y={spot.y} size={spot.ring} item={seat.user.cosmetics.mic_wave} />
+        ) : (
+          <SpeakingRipple x={spot.x} y={spot.y} size={spot.ring} />
+        )
+      ) : null}
       {invite ? <InviteHint x={spot.x} y={spot.y} size={spot.ring} /> : null}
       {glass ? null : (
         <View pointerEvents="none" style={{ position: 'absolute', left: px(spot.x + ring.dx * k), top: px(spot.y + ring.dy * k), opacity: picking ? 0.75 : 1 }}>
@@ -723,9 +861,12 @@ function SeatView({ seat, spot, mine, picking, speaking, invite, onPress }: { se
       >
         {seat.user ? (
           // Figma draws no occupied seat; the occupant's face fills the ring.
-          <Image
+          <UserAvatar
             source={avatarOf(seat.user)}
-            style={{ width: px(face), height: px(face), borderRadius: px(face / 2), borderWidth: mine ? px(1.5) : 0, borderColor: YELLOW }}
+            frame={seat.user.frame}
+            size={px(face)}
+            imageStyle={{ borderWidth: mine ? px(1.5) : 0, borderColor: YELLOW }}
+            animate
           />
         ) : seat.locked ? (
           // Mazag's own locked-seat disc.
@@ -776,40 +917,44 @@ function shortCount(n: number) {
 /**
  * What sits under an occupied seat: a round number badge and the person's name, then a pill
  * with the gifts they have been sent here. The pill's colour is its tier — gold with a
- * crown from 50K, purple from 10K, dark below.
+ * crown from 50K, purple from 10K, dark below. Every size is a share of the seat's ring,
+ * as measured off Mazag's room, so the caption shrinks with the seat in the 20/40 modes.
  */
 function SeatCaption({ seat, spot, width }: { seat: Seat; spot: SeatSpot; width: number }) {
   const { px } = useDesignScale();
-  const size = spot.labelSize;
-  const badge = size + 5;
+  const R = spot.ring;
+  const badge = R * 0.32;
+  const nameSize = R * 0.3;
+  const pillH = R * 0.263;
+  const pillW = R * 1.26;
+  const pillSize = R * 0.2;
+  // The badge starts 0.11 ring under the ring; the pill hangs 0.083 ring under the badge.
+  const lead = Math.max(0, R * 0.11 - (spot.labelY - spot.y - R));
+  // Digits sit dead centre of the pill: no extra font padding above or below them.
+  const centred = { includeFontPadding: false, textAlignVertical: 'center', lineHeight: px(pillSize * 1.3), transform: [{ translateY: px(-pillSize * 0.04) }] } as const;
   const value = seat.gift_value ?? 0;
   const tier = value >= 50_000 ? 'gold' : value >= 10_000 ? 'purple' : 'dark';
   const colour = BADGE[seat.gender as keyof typeof BADGE] ?? '#B06CFF';
-  const pillH = size + 3;
+  const pill = { marginTop: px(R * 0.083), width: px(pillW), height: px(pillH), borderRadius: px(pillH * 0.4), alignItems: 'center', justifyContent: 'center' } as const;
 
   return (
     <View pointerEvents="none" style={{ position: 'absolute', left: px(spot.labelX - width / 2), width: px(width), top: px(spot.labelY), alignItems: 'center' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(3), maxWidth: px(width) }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(R * 0.07), maxWidth: px(width), height: px(badge), marginTop: px(lead) }}>
         <View style={{ width: px(badge), height: px(badge), borderRadius: px(badge / 2), backgroundColor: colour, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={[styles.medium, { fontSize: px(size - 4), color: colors.white }]}>{seat.seat_number}</Text>
+          <Text style={[styles.medium, { fontSize: px(R * 0.18), color: colors.white, includeFontPadding: false, textAlignVertical: 'center' }]}>{seat.seat_number}</Text>
         </View>
-        <Text numberOfLines={1} style={[styles.medium, { flexShrink: 1, fontSize: px(size - 2), color: '#F0EEFF' }]}>
+        <Text numberOfLines={1} style={[styles.medium, { flexShrink: 1, fontSize: px(nameSize), lineHeight: px(badge), includeFontPadding: false, textAlignVertical: 'center', color: '#F0EEFF' }]}>
           {seat.user?.display_name ?? ''}
         </Text>
       </View>
       {tier === 'gold' ? (
-        <LinearGradient
-          colors={['#FFC83A', '#F58A12']}
-          style={{ marginTop: px(2), height: px(pillH), minWidth: px(width * 0.7), paddingHorizontal: px(5), borderRadius: px(pillH / 2), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: px(2), borderWidth: 1, borderColor: '#FFE9A6' }}
-        >
-          <Text style={{ fontSize: px(size - 5), color: '#B54A00' }}>♛</Text>
-          <Text style={[styles.medium, { fontSize: px(size - 4), color: '#7A2E00' }]}>{shortCount(value)}</Text>
+        <LinearGradient colors={['#FFC83A', '#F58A12']} style={[pill, { flexDirection: 'row', gap: px(2), borderWidth: 1, borderColor: '#FFE9A6' }]}>
+          <Text style={[centred, { fontSize: px(pillSize), color: '#B54A00' }]}>♛</Text>
+          <Text style={[styles.medium, centred, { fontSize: px(pillSize), color: '#7A2E00' }]}>{shortCount(value)}</Text>
         </LinearGradient>
       ) : (
-        <View
-          style={{ marginTop: px(2), height: px(pillH), minWidth: px(width * 0.7), paddingHorizontal: px(5), borderRadius: px(pillH / 2), alignItems: 'center', justifyContent: 'center', backgroundColor: tier === 'purple' ? '#5A1F78' : 'rgba(0,0,0,0.62)' }}
-        >
-          <Text style={[styles.medium, { fontSize: px(size - 4), color: colors.white }]}>{shortCount(value)}</Text>
+        <View style={[pill, { backgroundColor: tier === 'purple' ? '#5A1F78' : 'rgba(10,10,12,0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' }]}>
+          <Text style={[styles.medium, centred, { fontSize: px(pillSize), color: colors.white }]}>{shortCount(value)}</Text>
         </View>
       )}
     </View>
@@ -899,19 +1044,13 @@ function ChatRow({ user, text, gift }: { user: RoomUser | null; text: string; gi
   // Mazag's layout: a small face on the left; name and badges on a line, the words in a dark bubble under them.
   return (
     <View style={{ width: px(c.width), flexDirection: 'row', alignItems: 'flex-start', gap: px(10) }}>
-      <Image source={avatarOf(user)} style={{ width: px(24), height: px(24), borderRadius: px(12), marginTop: px(2) }} />
+      <UserAvatar source={avatarOf(user)} frame={user?.frame} size={px(24)} style={{ marginTop: px(2) }} />
       <View style={{ flex: 1, alignItems: 'flex-start' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(6) }}>
           <Text numberOfLines={1} style={[styles.medium, { maxWidth: px(110), fontSize: px(c.name.size + 1), lineHeight: px(c.name.height + 2), color: YELLOW }]}>
             {user?.display_name ?? 'Guftagu user'}
           </Text>
-          <View style={{ width: px(c.badges.width), height: px(c.badges.height), overflow: 'hidden' }}>
-            <Image
-              source={require('../../assets/room/badge-strip.png')}
-              resizeMode="stretch"
-              style={{ position: 'absolute', left: px(c.badges.width * c.badges.imageLeft), width: px(c.badges.width * c.badges.imageWidth), height: px(c.badges.height) }}
-            />
-          </View>
+          <LevelBadges user={user} height={c.badges.height} />
         </View>
         {roll ? (
           // Mazag's result tile: a blue tech frame around the dice face / hand / the three digits.
@@ -944,6 +1083,15 @@ function ChatRow({ user, text, gift }: { user: RoomUser | null; text: string; gi
           <View style={{ marginTop: px(4), minWidth: px(58), height: px(58), paddingHorizontal: px(6), borderRadius: px(10), backgroundColor: 'rgba(40,30,28,0.62)', alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: px(36), lineHeight: px(44) }}>{trimmed}</Text>
           </View>
+        ) : user?.cosmetics?.bubble?.image_url ? (
+          // A worn chat bubble: its ornate corners keep their size and the middle stretches to the words.
+          <View style={{ marginTop: px(4), maxWidth: '100%' }}>
+            <NineSlice uri={user.cosmetics.bubble.image_url} corner={16} minHeight={px(44)}>
+              <View style={{ paddingHorizontal: px(18), paddingVertical: px(10) }}>
+                <RichText text={text} size={px(c.text.size + 2)} line={px(c.text.height + 2)} />
+              </View>
+            </NineSlice>
+          </View>
         ) : (
           <View style={{ marginTop: px(4), maxWidth: '100%', paddingHorizontal: px(12), paddingVertical: px(6), borderRadius: px(10), backgroundColor: 'rgba(40,30,28,0.62)' }}>
             <RichText text={text} size={px(c.text.size + 2)} line={px(c.text.height + 2)} />
@@ -972,15 +1120,12 @@ function EntryRow({ user, text }: { user: RoomUser | null; text: string }) {
         backgroundColor: 'rgba(24,18,18,0.6)',
       }}
     >
-      <View style={{ width: px(c.badges.width), height: px(c.badges.height), overflow: 'hidden' }}>
-        <Image
-          source={require('../../assets/room/badge-strip.png')}
-          resizeMode="stretch"
-          style={{ position: 'absolute', left: px(c.badges.width * c.badges.imageLeft), width: px(c.badges.width * c.badges.imageWidth), height: px(c.badges.height) }}
-        />
-      </View>
-      <Text style={[styles.regular, { flexShrink: 1, fontSize: px(13), color: colors.white }]}>
-        <Text style={[styles.medium, { color: YELLOW }]}>{user?.display_name ?? 'Guftagu user'} </Text>
+      <LevelBadges user={user} height={c.badges.height} />
+      {/* One line, like Mazag: a long name is cut with "…" and the "entered …" part stays whole. */}
+      <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.medium, { flexShrink: 1, fontSize: px(13), color: YELLOW }]}>
+        {user?.display_name ?? 'Guftagu user'}
+      </Text>
+      <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.regular, { flexShrink: 0, maxWidth: px(c.width * 0.6), fontSize: px(13), color: colors.white }]}>
         {text}
       </Text>
     </View>

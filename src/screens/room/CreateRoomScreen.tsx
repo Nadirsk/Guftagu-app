@@ -149,6 +149,9 @@ export default function CreateRoomScreen() {
       });
       navigation.replace('Room', { uuid: room.uuid });
     } catch (e) {
+      // You already have a room (made on another phone, say): go to it rather than fail.
+      const existing = e instanceof ApiError && e.code === 'ROOM_EXISTS' ? (e.details as { uuid?: string } | undefined)?.uuid : undefined;
+      if (existing) return navigation.replace('Room', { uuid: existing });
       setError(e instanceof ApiError ? e.displayMessage : 'Could not create the room.');
     } finally {
       setBusy(false);

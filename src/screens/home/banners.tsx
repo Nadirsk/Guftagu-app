@@ -9,8 +9,11 @@ import { BANNERS, FONT_SIZE } from './geometry';
 // them carry a ribbon that overhangs the top edge.
 
 const art = {
-  smallLeft: require('../../assets/home/banner-small-left.png'),
-  smallRight: require('../../assets/home/banner-small-right.png'),
+  // The exports are 40-60% transparent, so on the home screen's black they read as
+  // dim, edgeless panels next to the wide banner. These are the same artwork with
+  // the alpha made solid inside the same rounded outline.
+  smallLeft: require('../../assets/home/banner-small-left-solid.png'),
+  smallRight: require('../../assets/home/banner-small-right-solid.png'),
   wide: require('../../assets/home/banner-wide.png'),
   frameLeft: require('../../assets/home/frame-side-left.png'),
   frameRight: require('../../assets/home/frame-side-right.png'),
@@ -52,6 +55,15 @@ type BannerSpec = {
 };
 
 /**
+ * The ribbon on the two small banners. Figma's 116x44 ribbon is a third of the
+ * wide banner's width but two thirds of a small one's, so it was off-centre and
+ * its lower tip rode up over the centre portrait's crown. Scaled to 36 tall and
+ * centred on the 177.878 card it straddles the top edge the way the CP Ranking
+ * ribbon does, ending 3px into the crown's frame like that one.
+ */
+const SMALL_RIBBON_BOX: Box = { x: 41.5, y: -18, width: 95, height: 36 };
+
+/**
  * Group 8921 — the left banner. Figma draws it without a ribbon; it wears the
  * Weekly Star one (same art, same placement) labelled "Ranking", and opens the
  * rankings screen.
@@ -73,7 +85,7 @@ export const BANNER_LEFT: BannerSpec = {
   ribbon: {
     source: art.ribbonWeeklyStar,
     label: 'Ranking',
-    box: { x: 28, y: -18, width: 116, height: 44 },
+    box: SMALL_RIBBON_BOX,
     paddingTop: 15,
     paddingBottom: 16,
   },
@@ -102,7 +114,7 @@ export const BANNER_RIGHT: BannerSpec = {
   ribbon: {
     source: art.ribbonWeeklyStar,
     label: 'Weekly Star',
-    box: { x: 28, y: -18, width: 116, height: 44 },
+    box: SMALL_RIBBON_BOX,
     paddingTop: 15,
     paddingBottom: 16,
   },

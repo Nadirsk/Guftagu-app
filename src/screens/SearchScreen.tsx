@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -19,6 +18,8 @@ import * as icons from '../assets/home/icons';
 import { useAuth } from '../auth/AuthContext';
 import { useDesignScale } from '../theme/layout';
 import { colors, typography } from '../theme/tokens';
+import { LevelBadges } from './level/LevelBadge';
+import { type AvatarFrame, UserAvatar } from '../components/UserAvatar';
 
 const avatarPlaceholder = require('../assets/avatar-placeholder.png');
 
@@ -95,7 +96,11 @@ type SearchUser = {
   guftagu_id: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  /** The frame they wear from the Item Bag; null when none. */
+  frame?: AvatarFrame | null;
   is_following?: boolean;
+  wealth_level?: number;
+  charm_level?: number;
 };
 
 type HistoryEntry = {
@@ -179,10 +184,7 @@ function ResultRow({
   return (
     <View style={[styles.row, { height: px(row.height), width: px(D.results.width) }]}>
       <View style={[styles.rowLeft, { gap: px(row.gap), marginRight: px(row.textGutter) }]}>
-        <Image
-          source={person.avatar_url ? { uri: person.avatar_url } : avatarPlaceholder}
-          style={{ width: px(row.avatar), height: px(row.avatar), borderRadius: px(row.avatar / 2) }}
-        />
+        <UserAvatar source={person.avatar_url ? { uri: person.avatar_url } : avatarPlaceholder} frame={person.frame} size={px(row.avatar)} />
         <View style={{ flex: 1, gap: px(row.textGap) }}>
           <Text
             numberOfLines={1}
@@ -193,6 +195,7 @@ function ResultRow({
           >
             {person.display_name ?? 'Guftagu user'}
           </Text>
+          <LevelBadges user={person} height={14} />
           {person.guftagu_id ? (
             <Text
               numberOfLines={1}

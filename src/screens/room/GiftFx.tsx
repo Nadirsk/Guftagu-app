@@ -28,7 +28,7 @@ type Pill = {
   bump: number;
   at: number;
 };
-type Banner = { id: string; text: string; image: string | null };
+type Banner = { id: string; text: string; image: string | null; skin: string | null };
 
 const nameOf = (u: RoomUser | null) => u?.display_name ?? 'Someone';
 
@@ -52,7 +52,8 @@ export function GiftFx({
   pillTop: number;
 }) {
   const { px } = useDesignScale();
-  const seen = useRef(feed.length);
+  // The id of the last hit already drawn: the feed is capped, so its length stops growing.
+  const seen = useRef<string | null>(feed.length ? feed[feed.length - 1].id : null);
   const queue = useRef<GiftHit[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstAt = useRef(0);
@@ -95,19 +96,18 @@ export function GiftFx({
       const coins = list.reduce((sum, h) => sum + (h.coin_value ?? 0), 0);
       if (coins >= BANNER_COINS) {
         const text = `${nameOf(first.sender)} sent ${first.gift.code} to ${to}`;
-        setBanners((b) => [...b, { id, text, image }]);
+        setBanners((b) => [...b, { id, text, image, skin: first.sender?.cosmetics?.floating_screen?.image_url ?? null }]);
         setTimeout(() => setBanners((b) => b.filter((x) => x.id !== id)), 4200);
       }
     }
   };
 
   useEffect(() => {
-    if (feed.length <= seen.current) {
-      seen.current = feed.length;
-      return;
-    }
-    queue.current.push(...feed.slice(seen.current));
-    seen.current = feed.length;
+    const lastIndex = seen.current === null ? -1 : feed.findIndex((h) => h.id === seen.current);
+    const fresh = feed.slice(lastIndex + 1);
+    if (fresh.length === 0) return;
+    queue.current.push(...fresh);
+    seen.current = feed[feed.length - 1].id;
     // An ALL send arrives as one frame per receiver, a beat apart: wait for the stream to go quiet
     // (but never longer than 1.4 s) so it is drawn once. The sender's own send is already complete
     // and is drawn the moment they tap.
@@ -288,10 +288,21 @@ function BannerView({ banner }: { banner: Banner }) {
         transform: [{ translateY: t.interpolate({ inputRange: [0, 1, 2], outputRange: [px(-60), 0, px(-60)] }) }],
       }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', height: px(44), paddingHorizontal: px(12), borderRadius: px(22), backgroundColor: 'rgba(150,30,50,0.92)', borderWidth: 1.5, borderColor: '#FFC83A' }}>
-        {banner.image ? <Image source={{ uri: banner.image }} resizeMode="contain" style={{ width: px(32), height: px(32) }} /> : null}
-        <Text numberOfLines={1} style={{ flex: 1, marginLeft: px(8), fontFamily: typography.fontFamily.medium, fontSize: px(13), color: colors.white }}>{banner.text}</Text>
-      </View>
+      {banner.skin ? (
+        // The sender's worn Floating Screen is the banner's own art (a wide 5:1 strip).
+        <View style={{ height: px(77), justifyContent: 'center' }}>
+          <Image source={{ uri: banner.skin }} resizeMode="stretch" style={StyleSheet.absoluteFill} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: px(74), paddingRight: px(64) }}>
+            {banner.image ? <Image source={{ uri: banner.image }} resizeMode="contain" style={{ width: px(28), height: px(28) }} /> : null}
+            <Text numberOfLines={2} style={{ flex: 1, marginLeft: px(6), fontFamily: typography.fontFamily.medium, fontSize: px(11), lineHeight: px(14), color: colors.white }}>{banner.text}</Text>
+          </View>
+        </View>
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'center', height: px(44), paddingHorizontal: px(12), borderRadius: px(22), backgroundColor: 'rgba(150,30,50,0.92)', borderWidth: 1.5, borderColor: '#FFC83A' }}>
+          {banner.image ? <Image source={{ uri: banner.image }} resizeMode="contain" style={{ width: px(32), height: px(32) }} /> : null}
+          <Text numberOfLines={1} style={{ flex: 1, marginLeft: px(8), fontFamily: typography.fontFamily.medium, fontSize: px(13), color: colors.white }}>{banner.text}</Text>
+        </View>
+      )}
     </Animated.View>
   );
 }

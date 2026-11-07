@@ -390,3 +390,20 @@ export const plus = `<svg preserveAspectRatio="none" overflow="visible" style="d
 </g>
 </svg>
 `;
+
+/** house — Tools → Room Mode (Figma 280:5055), drawn as the other tool glyphs: a 2px black stroke in a 36 box. */
+export const toolHouse = `<svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" stroke="black" stroke-width="1.333" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="black" stroke-width="1.333" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
+/** close (774:7367 / 774:8268) — the Material 3 kit's close, 24px, on-surface #1D1B20. */
+export const closeM3 = `<svg width="24" height="24" viewBox="0 -960 960 960" xmlns="http://www.w3.org/2000/svg">
+<path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z" fill="#1D1B20"/>
+</svg>`;
+
+/** text/plus (774:8997) — the Room Theme "add your own" card. */
+export const themePlus = `<svg width="31" height="31" viewBox="0 0 31 31" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M10.75 2V9.75H3V12.3333H10.75V20.0833H13.3333V12.3333H21.0833V9.75H13.3333V2H10.75Z" fill="#BD8AB0"/>
+</svg>`;
+

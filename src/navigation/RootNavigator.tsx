@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import EmailAuthScreen from '../screens/EmailAuthScreen';
 import HomeScreen from '../screens/HomeScreen';
+import LevelScreen from '../screens/level/LevelScreen';
 import MediaViewerScreen from '../screens/moment/MediaViewerScreen';
 import MomentNotificationsScreen from '../screens/moment/MomentNotificationsScreen';
 import PostDetailsScreen from '../screens/moment/PostDetailsScreen';
@@ -14,11 +15,33 @@ import ReportScreen from '../screens/chats/ReportScreen';
 import PostMomentScreen from '../screens/moment/PostMomentScreen';
 import PhoneAuthScreen from '../screens/PhoneAuthScreen';
 import ProfileSetupScreen from '../screens/ProfileSetupScreen';
+import ProfileListScreen from '../screens/profile/ProfileListScreen';
 import RankingRewardScreen from '../screens/ranking/RankingRewardScreen';
 import RankingScreen from '../screens/ranking/RankingScreen';
 import CreateRoomScreen from '../screens/room/CreateRoomScreen';
 import RoomScreen from '../screens/room/RoomScreen';
+import { MiniRoomPill, navigationRef, RoomSessionProvider } from '../screens/room/RoomSession';
 import SearchScreen from '../screens/SearchScreen';
+import ItemBagScreen from '../screens/itemBag/ItemBagScreen';
+import AccountScreen from '../screens/settings/AccountScreen';
+import BlockListScreen from '../screens/settings/BlockListScreen';
+import FeedbackScreen from '../screens/settings/FeedbackScreen';
+import LanguageScreen from '../screens/settings/LanguageScreen';
+import LegalPageScreen from '../screens/settings/LegalPageScreen';
+import NotificationScreen from '../screens/settings/NotificationScreen';
+import SettingsScreen from '../screens/settings/SettingsScreen';
+import MedalsScreen from '../screens/medals/MedalsScreen';
+import MedalRuleScreen from '../screens/medals/MedalRuleScreen';
+import CpRankingScreen from '../screens/cp/CpRankingScreen';
+import BlindDateCreateScreen from '../screens/blindDate/BlindDateCreateScreen';
+import BlindDateRoomScreen from '../screens/blindDate/BlindDateRoomScreen';
+import InviteRewardScreen from '../screens/invite/InviteRewardScreen';
+import VipPrivilegesScreen from '../screens/vip/VipPrivilegesScreen';
+import WalletScreen from '../screens/wallet/WalletScreen';
+import CoinsHistoryScreen from '../screens/wallet/CoinsHistoryScreen';
+import ExchangeScreen from '../screens/wallet/ExchangeScreen';
+import StoreScreen from '../screens/store/StoreScreen';
+import StoreSendScreen from '../screens/store/StoreSendScreen';
 import WeeklyStarScreen from '../screens/weeklyStar/WeeklyStarScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import { colors } from '../theme/tokens';
@@ -49,7 +72,8 @@ export default function RootNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <RoomSessionProvider>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {/* navigationKey: ProfileSetup is in both of the first two groups, so without
             it a needsProfile → signedOut switch (back button = sign out) keeps the
@@ -84,6 +108,28 @@ export default function RootNavigator() {
             <Stack.Screen name="Report" component={ReportScreen} />
             <Stack.Screen name="WeeklyStar" component={WeeklyStarScreen} />
             <Stack.Screen name="Ranking" component={RankingScreen} />
+            <Stack.Screen name="ProfileList" component={ProfileListScreen} />
+            <Stack.Screen name="Level" component={LevelScreen} />
+            <Stack.Screen name="Store" component={StoreScreen} />
+            <Stack.Screen name="Wallet" component={WalletScreen} />
+            <Stack.Screen name="CoinsHistory" component={CoinsHistoryScreen} />
+            <Stack.Screen name="Exchange" component={ExchangeScreen} />
+            <Stack.Screen name="Medals" component={MedalsScreen} />
+            <Stack.Screen name="CpRanking" component={CpRankingScreen} />
+            <Stack.Screen name="VipPrivileges" component={VipPrivilegesScreen} />
+            <Stack.Screen name="InviteReward" component={InviteRewardScreen} />
+            <Stack.Screen name="BlindDateCreate" component={BlindDateCreateScreen} />
+            <Stack.Screen name="BlindDateRoom" component={BlindDateRoomScreen} />
+            <Stack.Screen name="MedalRule" component={MedalRuleScreen} />
+            <Stack.Screen name="StoreSend" component={StoreSendScreen} />
+            <Stack.Screen name="ItemBag" component={ItemBagScreen} />
+            <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="Account" component={AccountScreen} />
+            <Stack.Screen name="LanguageSettings" component={LanguageScreen} />
+            <Stack.Screen name="BlockList" component={BlockListScreen} />
+            <Stack.Screen name="NotificationSettings" component={NotificationScreen} />
+            <Stack.Screen name="Feedback" component={FeedbackScreen} />
+            <Stack.Screen name="LegalPage" component={LegalPageScreen} />
             {/* Rounded top corners in Figma: it slides up over the Weekly page. */}
             <Stack.Screen
               name="RankingReward"
@@ -99,6 +145,9 @@ export default function RootNavigator() {
           </>
         )}
       </Stack.Navigator>
+      {/* Inside the container, over every screen: the room you minimised. */}
+      <MiniRoomPill />
     </NavigationContainer>
+    </RoomSessionProvider>
   );
 }

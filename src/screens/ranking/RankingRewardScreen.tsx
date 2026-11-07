@@ -1,16 +1,19 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { setStatusBarStyle } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useCallback, useEffect } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
+import { api, ApiError } from '../../api/client';
 import * as icons from '../../assets/ranking/icons';
+import { useAuth } from '../../auth/AuthContext';
 import { CountdownCells, Cropped, Img, Label, useBox } from '../../components/figmaLayers';
 import { useCountdown } from '../../hooks/useCountdown';
 import type { RootStackParamList } from '../../navigation/types';
 import { useDesignScale } from '../../theme/layout';
-import { REWARD_CARD, REWARD_PAGE, REWARD_THEME } from './geometry';
+import { colors } from '../../theme/tokens';
+import { type Board, REWARD_CARD, REWARD_PAGE, REWARD_THEME } from './geometry';
 import { art, Podium, secondsToWeekEnd, useBoard } from './parts';
 
 /**
@@ -20,26 +23,73 @@ import { art, Podium, secondsToWeekEnd, useBoard } from './parts';
  * rounded. The podium is the live weekly board and the countdown runs to that
  * board's close.
  *
- * Nothing in the app API lists ranking rewards yet (only the admin side has
- * `ranking-rules/{rule}/rewards`, and only for coins/diamonds), so the three
- * bands are Figma's own: N-day items either side of a coin amount.
+ * The three cards come from GET /rankings/rewards, i.e. whatever the admin
+ * panel's Rankings page sets for each rank: coins, diamonds or a store item for
+ * N days, up to three per rank — one per slot of the Figma card.
  */
 
-const SAMPLE_BANDS = [
-  { title: 'Week Top 1', days: 10, coins: 10000 },
-  { title: 'Week Top 2', days: 7, coins: 7000 },
-  { title: 'Week Top 3', days: 5, coins: 5000 },
-];
+type RankReward = {
+  id: number;
+  rank_from: number;
+  rank_to: number;
+  reward_type: string;
+  reward_value: number;
+  duration_days: number | null;
+  item: { id: number; type: string; name: string; image_url: string | null } | null;
+};
+
+function useRankRewards(board: Board) {
+  const { token } = useAuth();
+  const [rewards, setRewards] = useState<RankReward[]>([]);
+
+  const fetchRewards = useCallback(
+    () =>
+      // No weekly rule configured answers 404, which is just no rewards here.
+      api<{ rewards: RankReward[] }>(`/rankings/rewards?board=${board}&period=weekly`, { token })
+        .then((data) => data.rewards)
+        .catch((e): RankReward[] => {
+          if (!(e instanceof ApiError)) throw e;
+          return [];
+        }),
+    [board, token],
+  );
+
+  useEffect(() => {
+    let live = true;
+    setRewards([]);
+    fetchRewards().then((next) => live && setRewards(next));
+    return () => {
+      live = false;
+    };
+  }, [fetchRewards]);
+
+  const reload = useCallback(() => fetchRewards().then(setRewards), [fetchRewards]);
+
+  return { rewards, reload };
+}
 
 export default function RankingRewardScreen() {
   const { px } = useDesignScale();
   const abs = useBox();
   const navigation = useNavigation();
   const { board } = useRoute<RouteProp<RootStackParamList, 'RankingReward'>>().params;
-  const entries = useBoard(board, 'weekly');
+  const { entries, reload: reloadBoard } = useBoard(board, 'weekly');
+  const { rewards, reload: reloadRewards } = useRankRewards(board);
   const { secondsLeft, start } = useCountdown();
   const P = REWARD_PAGE;
   const T = REWARD_THEME[board];
+
+  // Pull-to-refresh, as on Home: the podium, the three reward cards and the countdown.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([reloadBoard(), reloadRewards()]);
+      start(secondsToWeekEnd());
+    } finally {
+      setRefreshing(false);
+    }
+  }, [reloadBoard, reloadRewards, start]);
 
   useFocusEffect(
     useCallback(() => {
@@ -64,7 +114,15 @@ export default function RankingRewardScreen() {
     <ScrollView
       style={[styles.root, { borderTopLeftRadius: px(P.radius), borderTopRightRadius: px(P.radius) }]}
       showsVerticalScrollIndicator={false}
-      bounces={false}
+      // No `bounces={false}`: iOS only pulls to refresh when the scroll view can bounce.
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.white}
+          colors={[colors.homeAccent]}
+        />
+      }
     >
       <View style={{ height: px(T.height), overflow: 'hidden' }}>
         <LinearGradient
@@ -89,8 +147,14 @@ export default function RankingRewardScreen() {
           Weekly  List
         </Label>
 
-        {SAMPLE_BANDS.map((band, i) => (
-          <RewardCard key={band.title} band={band} x={T.cards.x} y={T.cards.y + i * REWARD_CARD.step} />
+        {[1, 2, 3].map((rank, i) => (
+          <RewardCard
+            key={rank}
+            title={`Week Top ${rank}`}
+            rewards={rewards.filter((r) => r.rank_from <= rank && r.rank_to >= rank).slice(0, 3)}
+            x={T.cards.x}
+            y={T.cards.y + i * REWARD_CARD.step}
+          />
         ))}
 
         {T.photo ? <Img source={art.photo} box={T.photo} resizeMode="cover" /> : null}
@@ -125,7 +189,7 @@ export default function RankingRewardScreen() {
         <Podium
           spec={T.podium}
           entries={entries}
-          withScore={false}
+          withScore
           frames={charmLike ? art.podium : [art.richRewardTop1, art.podium[1], art.podium[2]]}
         />
 
@@ -136,7 +200,11 @@ export default function RankingRewardScreen() {
   );
 }
 
-function RewardCard({ band, x, y }: { band: (typeof SAMPLE_BANDS)[number]; x: number; y: number }) {
+/**
+ * Figma's card has three slots (item · coins · item). Rewards fill them in the
+ * admin's order: one reward sits in the middle, two take the outer slots.
+ */
+function RewardCard({ title, rewards, x, y }: { title: string; rewards: RankReward[]; x: number; y: number }) {
   const C = REWARD_CARD;
   const at = (b: { x: number; y: number; w: number; h: number }) => ({ ...b, x: x + b.x, y: y + b.y });
   const label = (cx: number, text: string) => (
@@ -144,6 +212,11 @@ function RewardCard({ band, x, y }: { band: (typeof SAMPLE_BANDS)[number]; x: nu
       {text}
     </Label>
   );
+  const { left, middle, right } = C.labelCx;
+  const slots = rewards.length === 1 ? [middle] : rewards.length === 2 ? [left, right] : [left, middle, right];
+  const tileW = C.tileLeft.w;
+  const stackW = C.coins.w;
+
   return (
     <>
       <Cropped source={art.cardBg} box={at(C.bg)} crop={C.bgCrop} radius={22} />
@@ -151,14 +224,41 @@ function RewardCard({ band, x, y }: { band: (typeof SAMPLE_BANDS)[number]; x: nu
       <Cropped source={art.cardEdge} box={at(C.edgeTop)} crop={C.edgeCrop} transform="flipY" />
       <Cropped source={art.ribbon} box={at(C.ribbon)} crop={C.ribbonCrop} />
       <Label cx={x + C.titleCx} y={y + C.titleY} size={16} lineHeight={24} width={200}>
-        {band.title}
+        {title}
       </Label>
-      <Img source={art.tile} box={at(C.tileLeft)} resizeMode="cover" />
-      {label(C.labelCx.left, `${band.days} Day`)}
-      <Cropped source={art.coins} box={at(C.coins)} crop={C.coinsCrop} />
-      {label(C.labelCx.middle, String(band.coins))}
-      <Img source={art.tile} box={at(C.tileRight)} resizeMode="cover" />
-      {label(C.labelCx.right, `${band.days} Day`)}
+
+      {rewards.length === 0 ? label(middle, 'Coming soon') : null}
+
+      {rewards.map((reward, i) => {
+        const cx = slots[i];
+        if (reward.item) {
+          const tile = { x: cx - tileW / 2, y: C.tileLeft.y, w: tileW, h: C.tileLeft.h };
+          return (
+            <Fragment key={reward.id}>
+              <Img source={art.tile} box={at(tile)} resizeMode="cover" />
+              {reward.item.image_url ? (
+                <Img
+                  source={{ uri: reward.item.image_url }}
+                  box={at({ x: tile.x + 4, y: tile.y + 4, w: tile.w - 8, h: tile.h - 8 })}
+                  resizeMode="contain"
+                />
+              ) : null}
+              {label(cx, reward.duration_days ? `${reward.duration_days} Day` : 'Forever')}
+            </Fragment>
+          );
+        }
+        const stack = { x: cx - stackW / 2, y: C.coins.y, w: stackW, h: C.coins.h };
+        return (
+          <Fragment key={reward.id}>
+            {reward.reward_type === 'diamonds' ? (
+              <Img source={art.diamonds} box={at(stack)} resizeMode="contain" />
+            ) : (
+              <Cropped source={art.coins} box={at(stack)} crop={C.coinsCrop} />
+            )}
+            {label(cx, String(reward.reward_value))}
+          </Fragment>
+        );
+      })}
     </>
   );
 }

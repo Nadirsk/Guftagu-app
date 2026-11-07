@@ -268,7 +268,10 @@ export function HomeHeader({
   online = 0,
   rankingFaces,
   weeklyStarFaces,
+  interactive = true,
 }: {
+  /** False for view-only accounts: the banners still show, but tapping them goes nowhere. */
+  interactive?: boolean;
   online?: number;
   rankingFaces?: (string | undefined)[];
   weeklyStarFaces?: (string | undefined)[];
@@ -386,9 +389,9 @@ export function HomeHeader({
         </Text>
       </View>
 
-      <TrioBanner spec={BANNER_LEFT} faces={rankingFaces} onPress={() => navigation.navigate('Ranking')} />
-      <TrioBanner spec={BANNER_RIGHT} faces={weeklyStarFaces} onPress={() => navigation.navigate('WeeklyStar')} />
-      <TrioBanner spec={BANNER_WIDE} />
+      <TrioBanner spec={BANNER_LEFT} faces={rankingFaces} onPress={interactive ? () => navigation.navigate('Ranking') : undefined} />
+      <TrioBanner spec={BANNER_RIGHT} faces={weeklyStarFaces} onPress={interactive ? () => navigation.navigate('WeeklyStar') : undefined} />
+      <TrioBanner spec={BANNER_WIDE} onPress={interactive ? () => navigation.navigate('CpRanking') : undefined} />
     </>
   );
 }

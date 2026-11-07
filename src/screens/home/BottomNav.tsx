@@ -72,10 +72,13 @@ export default function BottomNav({
   active,
   onSelect,
   tone = 'dark',
+  disabled = [],
 }: {
   active: NavKey;
   onSelect?: (key: NavKey) => void;
   tone?: 'dark' | 'light';
+  /** Tabs that are drawn dimmed and ignore taps. */
+  disabled?: NavKey[];
 }) {
   const { px } = useDesignScale();
   const light = tone === 'light';
@@ -102,6 +105,7 @@ export default function BottomNav({
       {BOTTOM_NAV.items.map(({ key, x }) => (
         <Pressable
           key={key}
+          disabled={disabled.includes(key)}
           onPress={onSelect ? () => onSelect(key) : undefined}
           style={{
             position: 'absolute',
@@ -112,7 +116,7 @@ export default function BottomNav({
             width: px(LABEL_WIDTH),
             height: px(item.height),
             alignItems: 'center',
-            opacity: key === active ? 1 : BOTTOM_NAV.idleOpacity,
+            opacity: disabled.includes(key) ? 0.25 : key === active ? 1 : BOTTOM_NAV.idleOpacity,
           }}
         >
           <SvgXml xml={(light ? LIGHT_GLYPHS : GLYPHS)[key]} width={px(item.icon)} height={px(item.icon)} />

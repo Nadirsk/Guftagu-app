@@ -9,6 +9,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
 import { LIST } from './geometry';
+import type { AvatarFrame } from '../../components/UserAvatar';
 
 const avatarPlaceholder = require('../../assets/avatar-placeholder.png');
 export const emptyArt = require('../../assets/chats/empty.png');
@@ -19,6 +20,11 @@ export type ChatUser = {
   guftagu_id: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  /** The frame they wear from the Item Bag; null when none. */
+  frame?: AvatarFrame | null;
+  /** Wealth / charm levels — the contacts lists show their medals. */
+  wealth_level?: number;
+  charm_level?: number;
 };
 
 /** `SocialPresenter::message()`. */
@@ -42,6 +48,8 @@ export type Conversation = {
   type: 'direct' | 'group';
   title: string | null;
   avatar_url: string | null;
+  /** The frame they wear from the Item Bag; null when none. */
+  frame?: AvatarFrame | null;
   participants: ChatUser[];
   last_message: ChatMessage | null;
   last_message_at: string | null;
@@ -82,6 +90,22 @@ export function clock(iso: string | null) {
 }
 
 /** Opens (or reopens) the direct thread with someone — find-or-create on the server. */
+/**
+ * The last page of messages seen for each thread. A thread opens on this and the network
+ * only refreshes it, so the chat is not blank while the request is in flight. The list
+ * fills it ahead of the tap with `prefetchMessages`.
+ */
+export const messageCache = new Map<string, ChatMessage[]>();
+
+export function prefetchMessages(token: string | null, uuid: string) {
+  return api<ChatMessage[]>(`/conversations/${uuid}/messages?limit=50`, { token })
+    .then((page) => {
+      // Never overwrite what an open thread already holds: it may be newer than this page.
+      if (!messageCache.has(uuid)) messageCache.set(uuid, [...page].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? '')));
+    })
+    .catch(() => undefined);
+}
+
 export async function openThread(token: string | null, user: ChatUser) {
   const { conversation } = await api<{ conversation: Conversation }>('/conversations', {
     method: 'POST',

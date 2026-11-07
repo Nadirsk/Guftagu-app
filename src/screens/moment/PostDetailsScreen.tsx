@@ -34,24 +34,29 @@ import { useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
+import { LevelBadges, READABLE_BADGE_HEIGHT } from '../level/LevelBadge';
 import {
+  AUTHOR,
+  AuthorRow,
   avatarSource,
-  badgeStrip,
   type FeedItem,
+  FollowChip,
   formatStamp,
   isVideoUrl,
   type PostAuthor,
 } from './parts';
 import { usePostLike, usePostState } from './PostStateContext';
+import { UserAvatar } from '../../components/UserAvatar';
 
 /**
- * Post Details — one screen, two tabs (Comments, Likes).
+ * Post Details. The author row — avatar, name, badges and the Follow chip — is
+ * the app's own and is drawn exactly as the Moment feed draws it. Everything
+ * under it is a flowing list: the post is the list's header, comments and
+ * likes are its rows, and the composer is pinned underneath, so a long post or
+ * a comment that wraps simply grows.
  *
- * Figma draws it as a fixed 402x874 frame with absolutely placed rows, which
- * cannot hold a long post or a comment that wraps. This is a flowing list: the
- * post is the list's header, comments and likes are its rows, and the composer
- * is pinned underneath. Comments nest Instagram-style — a top-level comment,
- * its replies tucked behind "View N replies".
+ * Comments nest Instagram-style: a top-level comment, its replies tucked
+ * behind "View N replies" and joined to it by a thin curved line.
  *
  * Every number is a design pixel on the 402-wide frame, scaled by `px`.
  */
@@ -64,11 +69,14 @@ export type DetailTab = (typeof DETAIL_TABS)[number];
 
 const TAB_LABEL: Record<DetailTab, string> = { Comment: 'Comments', Like: 'Likes' };
 
-const INK = '#141417';
-const SUBTLE = '#767680';
-const HAIRLINE = 'rgba(20,20,23,0.08)';
-const WASH = '#F5F5F7';
-const ACCENT_WASH = 'rgba(222,66,0,0.08)';
+const INK = '#17171A';
+const SUBTLE = '#6B6B73';
+const HAIRLINE = '#EEECE8';
+const THREAD_LINE = '#E4E2DE';
+const WASH = '#F4F3F1';
+const ACCENT = '#D13D00';
+const ACCENT_TEXT = '#B83500';
+const ACCENT_WASH = '#FDEEE6';
 
 /** `SocialPresenter::comment()` — verified against app/Support/SocialPresenter.php. */
 type Comment = {
@@ -107,21 +115,16 @@ const byTime = (a: Comment, b: Comment) =>
 
 function Avatar({ author, size }: { author: PostAuthor | null; size: number }) {
   return (
-    <Image
-      source={avatarSource({ author })}
-      style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: WASH }}
-    />
+    <UserAvatar source={avatarSource({ author })} frame={author?.frame} size={size} imageStyle={{ backgroundColor: WASH }} />
   );
 }
 
-/** The level pill and heart, drawn as the app's one flattened bitmap (73:16). */
-function Badges({ width }: { width: number }) {
+/** The person's wealth and charm grade medals — the slot the static 73:16 strip had (92 wide, 20 tall). */
+function Badges({ author }: { author: PostAuthor | null }) {
   return (
-    <Image
-      source={badgeStrip}
-      resizeMode="contain"
-      style={{ width, height: (width * 16) / 73, alignSelf: 'flex-start' }}
-    />
+    <View style={{ alignSelf: 'flex-start' }}>
+      <LevelBadges user={author} height={READABLE_BADGE_HEIGHT} />
+    </View>
   );
 }
 
@@ -140,19 +143,26 @@ function CommentItem({
   const name = comment.author?.display_name ?? 'Guftagu user';
 
   return (
-    <View style={[styles.commentRow, { gap: px(11), marginTop: px(reply ? 14 : 18) }]}>
+    <View style={[styles.commentRow, { gap: px(reply ? 10 : 12) }]}>
       <Avatar author={comment.author} size={avatar} />
       <View style={{ flex: 1 }}>
         {comment.is_deleted ? (
-          <Text style={[styles.removed, { fontSize: px(14), lineHeight: px(20) }]}>
+          <Text style={[styles.removed, { fontSize: px(14), lineHeight: px(21) }]}>
             This comment was removed
           </Text>
         ) : (
-          <Text style={[styles.commentText, { fontSize: px(14.5), lineHeight: px(21) }]}>
-            <Text style={styles.commentName}>{name}</Text>
-            {'  '}
-            {comment.body}
-          </Text>
+          <>
+            {/* Same profile block as the Likes tab: name, then the level and heart badges. */}
+            <Text numberOfLines={1} style={[styles.commentName, { fontSize: px(15), lineHeight: px(21) }]}>
+              {name}
+            </Text>
+            <View style={{ marginTop: px(2) }}>
+              <Badges author={comment.author} />
+            </View>
+            <Text style={[styles.commentText, { marginTop: px(6), fontSize: px(14.5), lineHeight: px(21) }]}>
+              {comment.body}
+            </Text>
+          </>
         )}
         <View style={[styles.commentMeta, { gap: px(16), marginTop: px(5) }]}>
           <Text style={[styles.metaText, { fontSize: px(12.5) }]}>{timeAgo(comment.created_at)}</Text>
@@ -180,13 +190,36 @@ function ThreadItem({
 }) {
   const { px } = useDesignScale();
   const count = thread.replies.length;
+  const column = px(38 + 12);
 
   return (
-    <View style={{ paddingHorizontal: px(18) }}>
+    <View style={{ paddingHorizontal: px(16), paddingTop: px(18) }}>
+      {/* The spine runs from under the parent's avatar down through the replies. */}
+      {open && count > 0 ? (
+        <View
+          pointerEvents="none"
+          style={[styles.spine, { left: px(16 + 19), top: px(18 + 38 + 6) }]}
+        />
+      ) : null}
+
       <CommentItem comment={thread.comment} onReply={() => onReply(thread.comment)} />
 
       {count > 0 ? (
-        <View style={{ marginLeft: px(38 + 11) }}>
+        <View style={{ marginLeft: column }}>
+          {open
+            ? thread.replies.map((r) => (
+                <View key={r.uuid} style={{ paddingTop: px(14) }}>
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      styles.elbow,
+                      { left: -px(31), top: 0, width: px(27), height: px(28), borderBottomLeftRadius: px(12) },
+                    ]}
+                  />
+                  <CommentItem comment={r} reply onReply={() => onReply(r)} />
+                </View>
+              ))
+            : null}
           <Pressable
             onPress={onToggle}
             hitSlop={8}
@@ -202,12 +235,6 @@ function ThreadItem({
               <ChevronDown size={px(14)} color={SUBTLE} />
             )}
           </Pressable>
-
-          {open
-            ? thread.replies.map((r) => (
-                <CommentItem key={r.uuid} comment={r} reply onReply={() => onReply(r)} />
-              ))
-            : null}
         </View>
       ) : null}
     </View>
@@ -218,15 +245,15 @@ function LikerItem({ liker }: { liker: Liker }) {
   const { px } = useDesignScale();
 
   return (
-    <View style={[styles.likerRow, { paddingHorizontal: px(18), paddingVertical: px(9), gap: px(12) }]}>
+    <View style={[styles.likerRow, { paddingHorizontal: px(16), paddingVertical: px(10), gap: px(12) }]}>
       <Avatar author={liker.author} size={px(46)} />
       <View style={{ flex: 1, gap: px(3) }}>
         <Text numberOfLines={1} style={[styles.commentName, { fontSize: px(15) }]}>
           {liker.author.display_name ?? 'Guftagu user'}
         </Text>
-        <Badges width={px(70)} />
+        <Badges author={liker.author} />
       </View>
-      <Heart size={px(18)} color={colors.postButton} fill={colors.postButton} />
+      <Heart size={px(18)} color={ACCENT} fill={ACCENT} />
     </View>
   );
 }
@@ -246,8 +273,9 @@ export default function PostDetailsScreen() {
       ? (rawPost as { post: FeedItem }).post
       : (rawPost as FeedItem);
   /**
-   * Which feed this was opened from. The Following tab hides the Follow pill
-   * because everyone there is already followed, so the detail must not offer it.
+   * Which feed this was opened from. The Following tab hides the chip for the
+   * same reason it hides it on the post itself — everyone there is already
+   * followed — so the detail of one of those posts must not offer it either.
    */
   const fromFollowing = route.params.following ?? false;
   const body = post.body?.trim();
@@ -278,7 +306,8 @@ export default function PostDetailsScreen() {
   const [replyTo, setReplyTo] = useState<{ parentUuid: string; name: string } | null>(null);
   /** Top-level comments whose replies are showing. */
   const [openThreads, setOpenThreads] = useState<Set<string>>(new Set());
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardVisible = keyboardHeight > 0;
   const [refreshing, setRefreshing] = useState(false);
   const inputRef = useRef<TextInputInstance>(null);
   const isSubmittingRef = useRef(false);
@@ -286,11 +315,11 @@ export default function PostDetailsScreen() {
   useEffect(() => {
     const showSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setKeyboardVisible(true),
+      (e) => setKeyboardHeight(e.endCoordinates.height),
     );
     const hideSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKeyboardVisible(false),
+      () => setKeyboardHeight(0),
     );
     return () => {
       showSub.remove();
@@ -309,12 +338,13 @@ export default function PostDetailsScreen() {
         ]);
         if (commentsRes) {
           const validComments = Array.isArray(commentsRes.data) ? commentsRes.data : [];
-          // Merge, so a poll does not throw away pages already scrolled in.
+          // A quiet poll merges, so it does not throw away pages already scrolled in.
           setComments((prev) => {
+            if (!quiet) return validComments;
             const map = new Map<string, Comment>();
             for (const c of prev) map.set(c.uuid, c);
             for (const c of validComments) map.set(c.uuid, c);
-            return quiet ? Array.from(map.values()) : validComments;
+            return Array.from(map.values());
           });
           if (!quiet) {
             setCommentsNextCursor(commentsRes.meta?.next_cursor ?? null);
@@ -563,28 +593,35 @@ export default function PostDetailsScreen() {
 
   // ---- the post, as the list's header --------------------------------------
 
-  const gutter = px(18);
+  const gutter = px(16);
   const urls = post.media_urls ?? [];
   const mediaWidth = windowWidth - gutter * 2;
-  const gridGap = px(4);
-  const columns = urls.length === 2 || urls.length === 4 ? 2 : 3;
+  // Same rule as the feed card: one photo is full width and 210 tall, two or
+  // more are three-across squares wrapping onto as many rows as needed.
+  const gridGap = px(6);
+  const columns = 3;
   const tile = (mediaWidth - gridGap * (columns - 1)) / columns;
+  const mediaRows: string[][] = [];
+  for (let i = 0; i < urls.length; i += columns) mediaRows.push(urls.slice(i, i + columns));
   const stamp = formatStamp(post.created_at, post.author?.country ?? null);
-  const isMine = post.author?.uuid === me?.uuid;
-  const showFollow = !isMine && following !== null && !fromFollowing;
 
   const mediaThumb = (url: string, index: number, width: number, height: number) => (
     <Pressable
       key={`${url}-${index}`}
       onPress={() => navigation.navigate('MediaViewer', { urls, index })}
-      style={[styles.thumb, { width, height, borderRadius: px(urls.length === 1 ? 16 : 10) }]}
+      style={[styles.thumb, { width, height, borderRadius: px(urls.length === 1 ? 16 : 12) }]}
     >
-      <Image source={{ uri: url }} style={{ width, height }} />
+      {isVideoUrl(url) ? null : (
+        <Image source={{ uri: url }} resizeMode="cover" style={{ width, height }} />
+      )}
       {isVideoUrl(url) || post.type === 'audio' ? (
         <View style={styles.playWrap}>
-          <View style={[styles.playDisc, { width: px(46), height: px(46), borderRadius: px(23) }]}>
-            <Play size={px(20)} color={colors.white} fill={colors.white} strokeWidth={0} />
-          </View>
+          <Play
+            size={px(urls.length === 1 ? 33 : 26)}
+            color={colors.white}
+            fill={colors.white}
+            strokeWidth={0}
+          />
         </View>
       ) : null}
     </Pressable>
@@ -592,37 +629,24 @@ export default function PostDetailsScreen() {
 
   const header = (
     <View>
-      <View style={[styles.authorRow, { paddingHorizontal: gutter, paddingTop: px(14), gap: px(12) }]}>
-        <Avatar author={post.author} size={px(50)} />
-        <View style={{ flex: 1, gap: px(3) }}>
-          <Text numberOfLines={1} style={[styles.authorName, { fontSize: px(16.5) }]}>
-            {post.author?.display_name ?? 'Guftagu user'}
-          </Text>
-          <Badges width={px(76)} />
-        </View>
-        {showFollow ? (
-          <Pressable
-            onPress={toggleFollow}
-            disabled={followBusy}
-            style={[
-              styles.followPill,
-              following ? styles.followPillOn : styles.followPillOff,
-              { paddingHorizontal: px(18), height: px(34), opacity: followBusy ? 0.6 : 1 },
-            ]}
-          >
-            <Text
-              style={[styles.followLabel, { fontSize: px(13.5) }, following ? { color: INK } : null]}
-            >
-              {following ? 'Following' : 'Follow'}
-            </Text>
-          </Pressable>
-        ) : null}
+      {/* The author row is the app's own, left exactly as the feed draws it. */}
+      <View style={{ height: px(AUTHOR.height), marginTop: px(16) }}>
+        <AuthorRow
+          post={post}
+          left={17}
+          top={0}
+          trailing={
+            post.author?.uuid === me?.uuid || following === null || fromFollowing ? null : (
+              <FollowChip following={following === true} busy={followBusy} onPress={toggleFollow} />
+            )
+          }
+        />
       </View>
 
       {body ? (
         <Text
           selectable
-          style={[styles.body, { marginHorizontal: gutter, marginTop: px(14), fontSize: px(16.5), lineHeight: px(25) }]}
+          style={[styles.body, { marginHorizontal: gutter, marginTop: px(14), fontSize: px(16), lineHeight: px(25) }]}
         >
           {body}
         </Text>
@@ -630,11 +654,15 @@ export default function PostDetailsScreen() {
 
       {urls.length === 1 ? (
         <View style={{ marginHorizontal: gutter, marginTop: px(14) }}>
-          {mediaThumb(urls[0], 0, mediaWidth, mediaWidth * 0.78)}
+          {mediaThumb(urls[0], 0, mediaWidth, px(210))}
         </View>
       ) : urls.length > 1 ? (
-        <View style={[styles.grid, { marginHorizontal: gutter, marginTop: px(14), gap: gridGap }]}>
-          {urls.map((u, i) => mediaThumb(u, i, tile, tile))}
+        <View style={{ marginHorizontal: gutter, marginTop: px(14), gap: gridGap }}>
+          {mediaRows.map((row, r) => (
+            <View key={r} style={{ flexDirection: 'row', gap: gridGap }}>
+              {row.map((u, c) => mediaThumb(u, r * columns + c, tile, tile))}
+            </View>
+          ))}
         </View>
       ) : null}
 
@@ -646,18 +674,16 @@ export default function PostDetailsScreen() {
         <Pressable
           onPress={toggleLike}
           hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel={liked ? 'Unlike' : 'Like'}
           style={[
             styles.actionPill,
             liked ? styles.actionPillLiked : null,
-            { height: px(40), paddingHorizontal: px(16), gap: px(7) },
+            { height: px(42), paddingHorizontal: px(18), gap: px(8) },
           ]}
         >
-          <Heart
-            size={px(19)}
-            color={liked ? colors.postButton : INK}
-            fill={liked ? colors.postButton : 'transparent'}
-          />
-          <Text style={[styles.actionLabel, { fontSize: px(14), color: liked ? colors.postButton : INK }]}>
+          <Heart size={px(20)} color={liked ? ACCENT : INK} fill={liked ? ACCENT : 'transparent'} />
+          <Text style={[styles.actionLabel, { fontSize: px(14), color: liked ? ACCENT_TEXT : INK }]}>
             {likeCount}
           </Text>
         </Pressable>
@@ -667,29 +693,40 @@ export default function PostDetailsScreen() {
             inputRef.current?.focus();
           }}
           hitSlop={6}
-          style={[styles.actionPill, { height: px(40), paddingHorizontal: px(16), gap: px(7) }]}
+          accessibilityRole="button"
+          accessibilityLabel="Add a comment"
+          style={[styles.actionPill, { height: px(42), paddingHorizontal: px(18), gap: px(8) }]}
         >
-          <MessageCircle size={px(19)} color={INK} />
+          <MessageCircle size={px(20)} color={INK} />
           <Text style={[styles.actionLabel, { fontSize: px(14), color: INK }]}>{commentCount}</Text>
         </Pressable>
       </View>
 
-      <View style={[styles.tabBar, { marginTop: px(18), paddingHorizontal: gutter }]}>
+      <View style={[styles.tabBar, { marginTop: px(16), marginHorizontal: gutter }]}>
         {DETAIL_TABS.map((name) => {
           const active = name === tab;
           return (
-            <Pressable key={name} onPress={() => setTab(name)} style={styles.tabCell}>
+            <Pressable
+              key={name}
+              onPress={() => setTab(name)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              style={[styles.tabCell, { marginRight: px(28) }]}
+            >
               <Text
                 style={[
                   styles.tabLabel,
-                  { fontSize: px(15), paddingVertical: px(12), color: active ? INK : SUBTLE },
+                  {
+                    fontSize: px(15),
+                    paddingTop: px(12),
+                    paddingBottom: px(10),
+                    color: active ? INK : SUBTLE,
+                  },
                 ]}
               >
                 {TAB_LABEL[name]} {name === 'Comment' ? commentCount : likeCount}
               </Text>
-              <View
-                style={[styles.tabRule, { backgroundColor: active ? colors.postButton : 'transparent' }]}
-              />
+              <View style={[styles.tabRule, { backgroundColor: active ? ACCENT : 'transparent' }]} />
             </Pressable>
           );
         })}
@@ -704,7 +741,7 @@ export default function PostDetailsScreen() {
   const empty = loaded && (tab === 'Comment' ? threads.length === 0 : likers.length === 0);
 
   const emptyView = !loaded ? (
-    <ActivityIndicator style={{ marginTop: px(40) }} color={colors.postButton} />
+    <ActivityIndicator style={{ marginTop: px(40) }} color={ACCENT} />
   ) : empty ? (
     <View style={[styles.emptyWrap, { paddingTop: px(44), paddingHorizontal: px(40), gap: px(6) }]}>
       {tab === 'Comment' ? (
@@ -719,7 +756,7 @@ export default function PostDetailsScreen() {
         {tab === 'Comment' ? 'Start the conversation.' : 'Be the first to like this moment.'}
       </Text>
     </View>
-  ) : null;
+  ) : undefined;
 
   const listProps = {
     style: styles.list,
@@ -732,25 +769,30 @@ export default function PostDetailsScreen() {
     ListHeaderComponent: header,
     ListEmptyComponent: emptyView,
     ListFooterComponent: loadingMore ? (
-      <ActivityIndicator style={{ marginVertical: px(16) }} color={colors.postButton} />
-    ) : null,
+      <ActivityIndicator style={{ marginVertical: px(16) }} color={ACCENT} />
+    ) : undefined,
     refreshControl: (
       <RefreshControl
         refreshing={refreshing}
         onRefresh={onRefresh}
-        tintColor={colors.postButton}
-        colors={[colors.postButton]}
+        tintColor={ACCENT}
+        colors={[ACCENT]}
       />
     ),
   };
 
   const canSend = !sending && draft.trim().length > 0;
+  const meAuthor: PostAuthor | null = me
+    ? { uuid: me.uuid, guftagu_id: null, display_name: me.display_name, avatar_url: me.avatar_url, country: null }
+    : null;
 
   return (
-    // Android resizes the window (softwareKeyboardLayoutMode: "resize"),
-    // while iOS lifts the composer off the keyboard with KeyboardAvoidingView.
+    // iOS lifts the composer off the keyboard with KeyboardAvoidingView. Android
+    // is edge-to-edge, so the window does not resize and the keyboard would sit
+    // on top of the composer: pad the bottom by its height instead, as the chat
+    // screen does.
     <KeyboardAvoidingView
-      style={styles.screen}
+      style={[styles.screen, Platform.OS === 'android' ? { paddingBottom: keyboardHeight } : null]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View
@@ -762,12 +804,12 @@ export default function PostDetailsScreen() {
         <Pressable
           onPress={() => navigation.goBack()}
           hitSlop={10}
-          style={[styles.backButton, { width: px(40), height: px(40) }]}
+          style={[styles.backButton, { width: px(44), height: px(44) }]}
           accessibilityLabel="Back"
         >
           <ArrowLeft size={px(24)} color={INK} />
         </Pressable>
-        <Text style={[styles.headerTitle, { fontSize: px(18) }]}>Post</Text>
+        <Text style={[styles.headerTitle, { fontSize: px(18) }]}>Post Details</Text>
       </View>
 
       {tab === 'Comment' ? (
@@ -814,6 +856,7 @@ export default function PostDetailsScreen() {
                 setDraft('');
               }}
               hitSlop={10}
+              accessibilityLabel="Cancel reply"
             >
               <X size={px(16)} color={SUBTLE} />
             </Pressable>
@@ -821,8 +864,15 @@ export default function PostDetailsScreen() {
         ) : null}
 
         <View style={[styles.composerRow, { gap: px(10) }]}>
-          <Avatar author={me ? { uuid: '', guftagu_id: null, display_name: me.display_name, avatar_url: me.avatar_url, country: null } : null} size={px(36)} />
-          <View style={[styles.field, { minHeight: px(44), borderRadius: px(22), paddingLeft: px(16), paddingRight: px(6) }]}>
+          <View style={{ marginBottom: px(4) }}>
+            <Avatar author={meAuthor} size={px(36)} />
+          </View>
+          <View
+            style={[
+              styles.field,
+              { minHeight: px(44), borderRadius: px(22), paddingLeft: px(16), paddingRight: px(5), paddingBottom: px(5) },
+            ]}
+          >
             <TextInput
               ref={inputRef}
               value={draft}
@@ -839,7 +889,7 @@ export default function PostDetailsScreen() {
               placeholderTextColor={SUBTLE}
               style={[
                 styles.fieldInput,
-                { fontSize: px(15), maxHeight: px(110), paddingVertical: px(11) },
+                { fontSize: px(14.5), maxHeight: px(110), paddingTop: px(11), paddingBottom: px(6) },
               ]}
             />
             <Pressable
@@ -853,14 +903,14 @@ export default function PostDetailsScreen() {
                   width: px(34),
                   height: px(34),
                   borderRadius: px(17),
-                  backgroundColor: canSend || sending ? colors.postButton : ACCENT_WASH,
+                  backgroundColor: canSend || sending ? ACCENT : '#FBE3D6',
                 },
               ]}
             >
               {sending ? (
                 <ActivityIndicator size="small" color={colors.white} />
               ) : (
-                <SendHorizontal size={px(17)} color={canSend ? colors.white : colors.postButton} />
+                <SendHorizontal size={px(17)} color={canSend ? colors.white : ACCENT_TEXT} />
               )}
             </Pressable>
           </View>
@@ -878,32 +928,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.white,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1,
     borderBottomColor: HAIRLINE,
   },
   backButton: { alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontFamily: typography.fontFamily.semiBold, color: INK, marginLeft: 4 },
 
-  authorRow: { flexDirection: 'row', alignItems: 'center' },
-  authorName: { fontFamily: typography.fontFamily.semiBold, color: INK },
-  followPill: { alignItems: 'center', justifyContent: 'center', borderRadius: 999 },
-  followPillOff: { backgroundColor: colors.postButton },
-  followPillOn: { backgroundColor: WASH },
-  followLabel: { fontFamily: typography.fontFamily.medium, color: colors.white },
-
   body: { fontFamily: typography.fontFamily.regular, color: INK },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  thumb: { overflow: 'hidden', backgroundColor: WASH },
+  thumb: { overflow: 'hidden', backgroundColor: colors.black },
   playWrap: {
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  playDisc: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingLeft: 3,
   },
   stamp: { fontFamily: typography.fontFamily.regular, color: SUBTLE },
 
@@ -919,12 +955,12 @@ const styles = StyleSheet.create({
 
   tabBar: {
     flexDirection: 'row',
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1,
     borderBottomColor: HAIRLINE,
   },
-  tabCell: { marginRight: 24 },
-  tabLabel: { fontFamily: typography.fontFamily.medium },
-  tabRule: { height: 2.5, borderRadius: 2 },
+  tabCell: { marginBottom: -1 },
+  tabLabel: { fontFamily: typography.fontFamily.semiBold },
+  tabRule: { height: 3, borderRadius: 2 },
 
   commentRow: { flexDirection: 'row', alignItems: 'flex-start' },
   commentName: { fontFamily: typography.fontFamily.semiBold, color: INK },
@@ -934,7 +970,14 @@ const styles = StyleSheet.create({
   metaText: { fontFamily: typography.fontFamily.regular, color: SUBTLE },
   metaAction: { fontFamily: typography.fontFamily.medium },
   toggleRow: { flexDirection: 'row', alignItems: 'center' },
-  toggleRule: { height: StyleSheet.hairlineWidth, backgroundColor: SUBTLE },
+  toggleRule: { height: 1.5, backgroundColor: '#B9B6B0' },
+  spine: { position: 'absolute', bottom: 0, width: 1.5, backgroundColor: THREAD_LINE },
+  elbow: {
+    position: 'absolute',
+    borderLeftWidth: 1.5,
+    borderBottomWidth: 1.5,
+    borderColor: THREAD_LINE,
+  },
 
   likerRow: { flexDirection: 'row', alignItems: 'center' },
 
@@ -944,7 +987,7 @@ const styles = StyleSheet.create({
 
   composer: {
     backgroundColor: colors.white,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: 1,
     borderTopColor: HAIRLINE,
   },
   replyBanner: { flexDirection: 'row', alignItems: 'center' },
@@ -960,7 +1003,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: typography.fontFamily.regular,
     color: INK,
-    padding: 0,
+    paddingHorizontal: 0,
   },
-  sendButton: { alignItems: 'center', justifyContent: 'center', marginBottom: 5 },
+  sendButton: { alignItems: 'center', justifyContent: 'center' },
 });

@@ -92,8 +92,8 @@ const TEN: [number, number, number, number][] = [
   [324, 388, 347.28, 441],
 ];
 
-/** The block the seats may fill: Figma's columns span 30 → 371, rows 207 → the notice. */
-const AREA = { left: 30, right: 371, top: 207, bottom: 470 } as const;
+/** Where the seat block starts: Figma's columns span 30 → 371, the first row is at 207. */
+const AREA = { left: 30, right: 371, top: 207 } as const;
 
 /**
  * Where each of `count` seats sits — the Mic Mode a room was created with
@@ -104,7 +104,26 @@ const AREA = { left: 30, right: 371, top: 207, bottom: 470 } as const;
  * across inside the same block, as Create Room's own previews do.
  */
 export function seatSpots(count: number): SeatSpot[] {
-  const full = (x: number, y: number, labelX: number, labelY: number): SeatSpot => ({
+  return count <= 12 ? withRowGap(layoutSeats(count)) : layoutSeats(count);
+}
+
+/**
+ * Figma's rows are as far apart as one seat with its caption (badge, name, gift pill) is
+ * tall, so the pill touches the next row's ring. Mazag keeps ~19 px clear there; each row
+ * moves down by this much more than the one above it.
+ */
+const ROW_GAP = 12;
+
+function withRowGap(spots: SeatSpot[]): SeatSpot[] {
+  const rows = [...new Set(spots.map((s) => s.y))].sort((a, b) => a - b);
+  return spots.map((s) => {
+    const dy = rows.findIndex((y) => Math.abs(y - s.y) < 1) * ROW_GAP;
+    return { ...s, y: s.y + dy, labelY: s.labelY + dy };
+  });
+}
+
+function layoutSeats(count: number): SeatSpot[] {
+  const full =(x: number, y: number, labelX: number, labelY: number): SeatSpot => ({
     x, y, labelX, labelY, ring: SEAT.ring, labelSize: SEAT.label.size,
   });
   if (count === 10) return TEN.map(([x, y, lx, ly]) => full(x, y, lx, ly));
@@ -132,11 +151,11 @@ export function seatSpots(count: number): SeatSpot[] {
   const columns = count <= 20 ? 5 : 8;
   const ring = count <= 20 ? 40 : 32;
   const labelSize = count <= 20 ? 13 : 10;
-  const rows = Math.ceil(count / columns);
   const xStep = (AREA.right - AREA.left - ring) / (columns - 1);
-  // A row is the ring, the "3 Name" line and the gift pill under it.
-  const rowHeight = ring + 2 * labelSize + 14;
-  const yStep = Math.min(rowHeight, (AREA.bottom - AREA.top - ring - labelSize - 4) / Math.max(1, rows - 1));
+  // Mazag's rows sit 2.2 rings apart: the ring, its caption and a clear gap to the next ring.
+  // The block grows downward with the row count (the chat list below gets shorter)
+  // rather than squeezing rows until a pill lands on the seat underneath.
+  const yStep = ring * 2.2;
   return Array.from({ length: count }, (_, i) => {
     const x = AREA.left + (i % columns) * xStep;
     const y = AREA.top + Math.floor(i / columns) * yStep;
@@ -439,4 +458,44 @@ export const WHEEL = {
     logo: { x: 85, y: 143, size: 119 },
     close: { x: 119, y: 415, size: 52, icon: { inset: 13, size: 27 } },
   },
+} as const;
+
+/**
+ * Tools → Room Mode (Figma 774:7201, Frame 1597881342): a white sheet from y 240, a
+ * 2-column grid of seat-layout cards. Each card previews its seats the way Figma does —
+ * up to 2 big, up to 12 four-a-row, up to 20 four-a-row (15 shown), more six-a-row (30).
+ */
+export const ROOM_MODE = {
+  y: 240,
+  scrim: 'rgba(0,0,0,0.36)',
+  title: { y: 34, size: 16 },
+  close: { x: 346, y: 34, size: 24 },
+  grid: { x: 23, y: 102, width: 172.5, height: 194.5, colStep: 184.5, rowStep: 202.5 },
+  card: { radius: 7, on: { background: 'rgba(0,93,233,0.11)', border: '#005DE9' }, off: { background: '#FFFFFF', border: 'rgba(0,0,0,0.15)' } },
+  label: { size: 15, line: 19 },
+  /** Ellipse 62 behind each seat; the seat glyph is 64% of the disc, a quarter in from its left. */
+  disc: '#4D2242',
+  seat: '#FFC3DD',
+  /** Each bucket's label + seats block sits where Figma's card of that size has it (`at`, card-relative). */
+  buckets: [
+    { upTo: 2, size: 41, gap: 6, perRow: 2, rowStep: 41, show: 2, labelGap: 0, at: { x: 0, y: 0 }, width: 0 },
+    { upTo: 12, size: 29, gap: 6, perRow: 4, rowStep: 38, show: 12, labelGap: 13, at: { x: 19, y: 47 }, width: 134 },
+    { upTo: 20, size: 29, gap: 6, perRow: 4, rowStep: 36, show: 15, labelGap: 9, at: { x: 15, y: 15 }, width: 134 },
+    { upTo: Infinity, size: 20, gap: 3, perRow: 6, rowStep: 24, show: 30, labelGap: 14, at: { x: 18, y: 18 }, width: 135 },
+  ],
+  /** The 2-seat card keeps its label at the top and centres its seats 8 below the middle. */
+  twoSeat: { labelY: 11, seatsDy: 8 },
+} as const;
+
+/** Tools → Room Theme (Figma 774:8130): a white sheet from y 502, one row of 183-tall cards. */
+export const ROOM_THEME = {
+  y: 502,
+  scrim: 'rgba(0,0,0,0.36)',
+  title: { y: 34, size: 16 },
+  close: { x: 346, y: 34, size: 24 },
+  row: { x: 23, y: 123, height: 183, gap: 6 },
+  add: { width: 87, radius: 10, border: 'rgba(0,0,0,0.18)', plus: { x: 31, y: 81, size: 31 } },
+  card: { width: 85, radius: 11 },
+  /** Not in Figma: the theme in use is ringed in Room Mode's own selected blue. */
+  current: { border: '#005DE9', width: 2 },
 } as const;

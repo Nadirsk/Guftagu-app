@@ -159,6 +159,8 @@ export const REWARD_ICON: Record<string, Box & { crop?: Crop }> = {
   frame: { x: 12, y: 11, w: 48, h: 47 },
   badge: { x: 8, y: 13, w: 53, h: 44 },
   coins: { x: 12, y: 20, w: 45, h: 30, crop: { w: 91.05, h: 100, l: 4.72, t: 0 } },
+  // Not in the Weekly Star frame — Daily Rewards' diamond pile (204x101), centred where the coins sit.
+  diamonds: { x: 9, y: 22, w: 52, h: 26 },
 };
 /** An admin-uploaded catalog icon has no Figma slot; centre it on the tile. */
 export const CUSTOM_ICON: Box = { x: 12, y: 12, w: 45, h: 45 };

@@ -32,7 +32,8 @@ import { colors } from '../../theme/tokens';
 import { GiftSheet } from '../room/sheets';
 import { THREAD } from './geometry';
 import type { VoiceClip } from './voice';
-import { avatarOf, type ChatMessage, type ChatUser, nameOf, styles } from './parts';
+import { avatarOf, type ChatMessage, type ChatUser, messageCache, nameOf, styles } from './parts';
+import { UserAvatar } from '../../components/UserAvatar';
 
 /**
  * A DM thread. Messages come from `GET /conversations/{uuid}/messages` (newest first) and
@@ -122,14 +123,17 @@ function dayLabel(iso: string) {
 export default function ConversationScreen() {
   const { px } = useDesignScale();
   const navigation = useNavigation<Nav>();
-  const { uuid, peer } = useRoute<RouteProp<RootStackParamList, 'Conversation'>>().params;
+  const { uuid, peer, alias: initialAlias } = useRoute<RouteProp<RootStackParamList, 'Conversation'>>().params;
   const { token, user } = useAuth();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => messageCache.get(uuid) ?? []);
+  useEffect(() => {
+    if (messages.length) messageCache.set(uuid, messages);
+  }, [messages, uuid]);
   const [draft, setDraft] = useState('');
   const [kb, setKb] = useState(0);
   const [peerTyping, setPeerTyping] = useState(false);
   // The private nickname set in Chat Settings; refetched on focus so coming back from there shows it.
-  const [alias, setAlias] = useState<string | null>(null);
+  const [alias, setAlias] = useState<string | null>(initialAlias ?? null);
   useFocusEffect(
     useCallback(() => {
       let live = true;
@@ -185,7 +189,16 @@ export default function ConversationScreen() {
   const load = useCallback(async () => {
     try {
       const page = await api<ChatMessage[]>(`/conversations/${uuid}/messages?limit=50`, { token });
-      merge(page);
+      // The server's page is the truth, not just more to add: "Clear Chat History" or a
+      // delete-for-me hides messages server-side, and merging alone would leave them on
+      // screen. A message that landed after the page was cut (a send or a socket frame in
+      // flight) is kept.
+      setMessages((prev) => {
+        const newest = page.reduce((latest, m) => ((m.created_at ?? '') > latest ? m.created_at ?? '' : latest), '');
+        const seen = new Set(page.map((m) => m.uuid));
+        const later = newest ? prev.filter((m) => !seen.has(m.uuid) && (m.created_at ?? '') > newest) : [];
+        return [...page, ...later].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+      });
       api(`/conversations/${uuid}/read`, { method: 'POST', token }).catch(() => undefined);
     } catch (e) {
       if (!(e instanceof ApiError)) throw e;
@@ -484,7 +497,7 @@ export default function ConversationScreen() {
           <Pressable onPress={() => navigation.goBack()} hitSlop={px(8)} style={{ width: px(40), height: px(44), alignItems: 'center', justifyContent: 'center' }}>
             <ArrowLeft size={px(24)} color={colors.black} strokeWidth={2} />
           </Pressable>
-          <Image source={avatarOf(peer)} style={{ width: px(42), height: px(42), borderRadius: px(21), marginLeft: px(2) }} />
+          <UserAvatar source={avatarOf(peer)} frame={peer.frame} size={px(42)} style={{ marginLeft: px(2) }} />
           <View style={{ flex: 1, marginLeft: px(10), marginRight: px(8) }}>
             <Text numberOfLines={1} style={[styles.semiBold, { fontSize: px(16), lineHeight: px(22) }]}>
               {alias ?? nameOf(peer)}
@@ -493,7 +506,7 @@ export default function ConversationScreen() {
           </View>
           {[
             ...(following === false ? [{ xml: icons.userRoundPlus, onPress: followPeer }] : []),
-            { xml: icons.ellipsis, onPress: () => navigation.navigate('ChatSettings', { uuid, peer }) },
+            { xml: icons.ellipsis, onPress: () => navigation.navigate('ChatSettings', { uuid, peer, alias }) },
           ].map((a, i) => (
             <Pressable
               key={i}
@@ -722,7 +735,7 @@ export default function ConversationScreen() {
 
 function Avatar({ user }: { user: ChatUser | null | undefined }) {
   const { px } = useDesignScale();
-  return <Image source={avatarOf(user)} style={{ width: px(32), height: px(32), borderRadius: px(16) }} />;
+  return <UserAvatar source={avatarOf(user)} frame={user?.frame} size={px(32)} />;
 }
 
 function TypingRow({ peer }: { peer: ChatUser }) {

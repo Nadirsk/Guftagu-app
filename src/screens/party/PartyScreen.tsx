@@ -12,7 +12,9 @@ import { useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
+import { LevelBadges, READABLE_BADGE_HEIGHT } from '../level/LevelBadge';
 import { BOTTOM_NAV_HEIGHT } from '../home/BottomNav';
+import type { AvatarFrame } from '../../components/UserAvatar';
 
 /**
  * The Party tab — section 498:2839 in file MXdYSY2CZgSk8VexVjyw1B (the "GUFTAGU (Copy)" file).
@@ -80,7 +82,7 @@ type Section = 'Related' | 'Explore';
 type Sub = 'Recently' | 'Following';
 type Pill = 'Recommended' | 'New';
 
-type Person = { uuid: string; display_name: string | null; avatar_url: string | null };
+type Person = { uuid: string; display_name: string | null; avatar_url: string | null; frame?: AvatarFrame | null; wealth_level?: number; charm_level?: number };
 type LiveRoom = {
   uuid: string;
   name: string | null;
@@ -161,16 +163,19 @@ function RoomRow({ room, onPress }: { room: LiveRoom; onPress: () => void }) {
           resizeMode="cover"
           style={{ width: px(row.photo.width), height: px(row.height), borderRadius: px(row.photo.radius) }}
         />
-        <View style={{ flex: 1, gap: px(8), marginRight: px(8) }}>
-          <Text numberOfLines={1} style={[styles.rowName, { fontSize: px(16) }]}>
+        {/* Three 20px lines 4 apart, so the medals' line fits the 76px row (493:2290). */}
+        <View style={{ flex: 1, gap: px(4), marginRight: px(8) }}>
+          <Text numberOfLines={1} style={[styles.rowName, { fontSize: px(16), lineHeight: px(20) }]}>
             {room.name ?? 'Guftagu room'}
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(4) }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(4), height: px(20) }}>
             <Bars />
-            <Text style={[styles.rowName, { fontSize: px(16) }]}>{room.listener_count}</Text>
+            <Text style={[styles.rowName, { fontSize: px(16), lineHeight: px(20) }]}>{room.listener_count}</Text>
           </View>
-          {/* Who is in it: the host, then up to five people inside right now. */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(6), height: face }}>
+          {/* Figma's third line: the host's wealth / charm medals; then up to five
+              faces of the host and people inside right now. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(6), height: px(READABLE_BADGE_HEIGHT) }}>
+            <LevelBadges user={room.owner} height={READABLE_BADGE_HEIGHT} />
             <View style={{ flexDirection: 'row' }}>
               {[room.owner, ...room.members.filter((m) => m.uuid !== room.owner?.uuid)]
                 .filter((p): p is Person => !!p)
@@ -190,11 +195,6 @@ function RoomRow({ room, onPress }: { room: LiveRoom; onPress: () => void }) {
                   />
                 ))}
             </View>
-            {room.owner?.display_name ? (
-              <Text numberOfLines={1} style={[styles.rowName, { fontSize: px(11), opacity: 0.55, flexShrink: 1 }]}>
-                {room.owner.display_name}
-              </Text>
-            ) : null}
           </View>
         </View>
       </View>
@@ -207,6 +207,25 @@ export default function PartyScreen({ initialSection = 'Related' }: { initialSec
   const { px } = useDesignScale();
   const navigation = useNavigation<Nav>();
   const { token } = useAuth();
+  const [openingRoom, setOpeningRoom] = useState(false);
+
+  /**
+   * A user keeps one room. With one already made, Create My Room joins it straight away;
+   * only the first time does it open the create screen. If the check itself fails the
+   * create screen still opens — a second create is refused there and joins instead.
+   */
+  const openMyRoom = async () => {
+    setOpeningRoom(true);
+    try {
+      const { room } = await api<{ room: { uuid: string } | null }>('/rooms/mine', { token });
+      if (room) navigation.navigate('Room', { uuid: room.uuid });
+      else navigation.navigate('CreateRoom');
+    } catch {
+      navigation.navigate('CreateRoom');
+    } finally {
+      setOpeningRoom(false);
+    }
+  };
   const [section, setSection] = useState<Section>(initialSection);
   const [sub, setSub] = useState<Sub>('Recently');
   const [pill, setPill] = useState<Pill>('Recommended');
@@ -333,9 +352,10 @@ export default function PartyScreen({ initialSection = 'Related' }: { initialSec
         </>
       ) : (
         <>
-          {/* 757:14059 — Create My Room */}
+          {/* 757:14059 — Create My Room: the create screen once, your own room after that. */}
           <Pressable
-            onPress={() => navigation.navigate('CreateRoom')}
+            onPress={openMyRoom}
+            disabled={openingRoom}
             style={[
               styles.create,
               { left: px(D.create.x), top: px(D.create.y), width: px(D.create.width), height: px(D.create.height), borderRadius: px(D.create.radius) },
@@ -346,8 +366,9 @@ export default function PartyScreen({ initialSection = 'Related' }: { initialSec
             <Image source={require('../../assets/party/mic.png')} resizeMode="cover" style={{ position: 'absolute', left: px(271), top: px(-20), width: px(132), height: px(132), opacity: 0.18 }} />
           </Pressable>
 
-          {/* 757:14064 — Blind Date Room. There is no blind-date flow on the server yet, so the card only draws. */}
-          <View
+          {/* 757:14064 — Blind Date Room. There is no blind-date flow on the server yet: it opens the create screen (2015:8837) and the room locally. */}
+          <Pressable
+            onPress={() => navigation.navigate('BlindDateCreate')}
             style={[
               styles.create,
               {
@@ -362,7 +383,7 @@ export default function PartyScreen({ initialSection = 'Related' }: { initialSec
             <Text style={{ position: 'absolute', left: px(91), top: px(26), fontFamily: typography.fontFamily.semiBold, fontSize: px(16), color: '#eb11aa' }}>Blind Date Room</Text>
             <Image source={require('../../assets/party/blind-heart.png')} resizeMode="cover" style={{ position: 'absolute', left: px(11), top: px(7), width: px(62), height: px(57) }} />
             <Image source={require('../../assets/party/blind-outline.png')} resizeMode="cover" style={{ position: 'absolute', left: px(267), top: px(4), width: px(98), height: px(98) }} />
-          </View>
+          </Pressable>
 
           {/* 494:2411 — Recently | Following */}
           {(['Recently', 'Following'] as const).map((name) => {

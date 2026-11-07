@@ -62,3 +62,11 @@ export const male = `<svg preserveAspectRatio="none" overflow="visible" style="d
 </g>
 </svg>
 `;
+
+/** Same disc as `male`, pink (the room seat badge's female colour) with a Venus mark. */
+export const female = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="22.5" height="22.5" viewBox="0 0 22.5 22.5" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="11.25" cy="11.25" r="11.25" fill="#FF5C93"/>
+<circle cx="11.25" cy="9.4" r="3.4" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M11.25 12.8V17.4M8.9 15.3H13.6" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+`;

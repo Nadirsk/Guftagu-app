@@ -6,9 +6,11 @@ import { api, apiWithMeta } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
+import { LevelBadges, READABLE_BADGE_HEIGHT } from '../level/LevelBadge';
 import { usePostLike } from '../moment/PostStateContext';
 import { avatarSource, type FeedItem, FollowChip, isVideoUrl, type PostAuthor } from '../moment/parts';
 import { POST } from './geometry';
+import { UserAvatar } from '../../components/UserAvatar';
 
 /**
  * For You and Following are `GET /feed`'s two scopes: `discover` is the people
@@ -239,14 +241,7 @@ export function PostCard({
               borderColor: colors.feedRing,
             }}
           />
-          <Image
-            source={avatarSource(post)}
-            style={{
-              width: px(author.avatar),
-              height: px(author.avatar),
-              borderRadius: px(author.avatar / 2),
-            }}
-          />
+          <UserAvatar source={avatarSource(post)} frame={post.author?.frame} size={px(author.avatar)} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text
@@ -255,6 +250,9 @@ export function PostCard({
           >
             {post.author?.display_name ?? 'Guftagu user'}
           </Text>
+          <View style={{ marginVertical: px(2) }}>
+            <LevelBadges user={post.author} height={READABLE_BADGE_HEIGHT} />
+          </View>
           <Text style={[styles.meta, { fontSize: px(author.metaSize), lineHeight: px(author.metaHeight) }]}>
             {timeAgo(post.created_at)} · {visibilityLabel(post.visibility)}
           </Text>

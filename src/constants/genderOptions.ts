@@ -22,3 +22,19 @@ export const GENDER_OPTIONS: GenderOption[] = [
     apiValue: 'undisclosed',
   },
 ];
+
+/** Translation keys for each choice's label — sign-up and Settings → Account share them. */
+export const GENDER_LABEL_KEYS: Record<string, string> = {
+  Male: 'profile.male',
+  Female: 'profile.female',
+  Other: 'profile.other',
+  'Prefer not to say': 'profile.preferNot',
+};
+
+/**
+ * The choice a saved gender reads as. `undisclosed` covers both Other and Prefer not to
+ * say, so it shows as Other.
+ */
+export const genderOptionFor = (apiValue: string | null | undefined) =>
+  GENDER_OPTIONS.find((o) => o.apiValue === apiValue);
+

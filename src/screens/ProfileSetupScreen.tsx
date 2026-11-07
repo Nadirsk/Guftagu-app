@@ -23,7 +23,7 @@ import ActionSheet from '../components/ActionSheet';
 import DatePickerModal, { formatDateDMY } from '../components/DatePickerModal';
 import SelectModal from '../components/SelectModal';
 import { COUNTRY_OPTIONS, countryFlagEmoji } from '../constants/countryOptions';
-import { GENDER_OPTIONS } from '../constants/genderOptions';
+import { GENDER_LABEL_KEYS, GENDER_OPTIONS } from '../constants/genderOptions';
 import { RootStackParamList } from '../navigation/types';
 import { useDesignScale } from '../theme/layout';
 import { colors, typography } from '../theme/tokens';
@@ -116,13 +116,6 @@ function SelectField({
 }
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ProfileSetup'>;
-
-const GENDER_LABEL_KEYS: Record<string, string> = {
-  Male: 'profile.male',
-  Female: 'profile.female',
-  Other: 'profile.other',
-  'Prefer not to say': 'profile.preferNot',
-};
 
 export default function ProfileSetupScreen() {
   const navigation = useNavigation<NavigationProp>();

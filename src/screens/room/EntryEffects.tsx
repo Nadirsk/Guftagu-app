@@ -2,6 +2,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Easing, Image, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
+import { SvgaPlayer } from '../../components/SvgaPlayer';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
 import { avatarOf } from './sheets';
@@ -40,24 +41,28 @@ export function EntranceBanner({ entrance, onDone }: { entrance: Entrance; onDon
   const [boxWidth, setBoxWidth] = useState(0);
 
   const bannerW = width - px(24);
+  // A banner with its own `.svga` stays up for the whole animation (5 s), not the plain 2.5 s hold.
+  const hold = arrival.banner?.animation_url ? 5200 : HOLD;
   const vehicleMs = arrival.effect?.duration_ms ?? VEHICLE_MS;
+  // An effect with an `.svga` plays as a full-room animation, as Mazag's entry vehicles do.
+  const svgaUrl = arrival.effect?.animation_url && (arrival.effect.animation_type === 'svga' || arrival.effect.animation_url.toLowerCase().includes('.svga')) ? arrival.effect.animation_url : null;
   const text = `${user?.display_name ?? 'Guftagu user'} ${entryText(arrival)}`;
   const overflow = textWidth > boxWidth && boxWidth > 0 ? textWidth - boxWidth : 0;
 
   useEffect(() => {
-    const total = SLIDE_IN + HOLD + SLIDE_OUT;
+    const total = SLIDE_IN + hold + SLIDE_OUT;
     const banner = Animated.sequence([
       Animated.timing(x, { toValue: 0, duration: SLIDE_IN, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.delay(HOLD),
+      Animated.delay(hold),
       Animated.timing(x, { toValue: -width, duration: SLIDE_OUT, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
     ]);
-    const vehicle = arrival.effect?.image_url
+    const vehicle = arrival.effect?.image_url && !svgaUrl
       ? Animated.timing(car, { toValue: 1, duration: vehicleMs, easing: Easing.inOut(Easing.quad), useNativeDriver: true })
       : null;
 
     banner.start();
     vehicle?.start();
-    const done = setTimeout(onDone, Math.max(total, vehicle ? vehicleMs : 0) + 80);
+    const done = setTimeout(onDone, Math.max(total, vehicle || svgaUrl ? vehicleMs : 0) + 80);
     return () => {
       clearTimeout(done);
       banner.stop();
@@ -85,11 +90,17 @@ export function EntranceBanner({ entrance, onDone }: { entrance: Entrance; onDon
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <Animated.View style={{ position: 'absolute', left: px(12), top: px(330), width: bannerW, transform: [{ translateX: x }] }}>
+        {arrival.banner?.animation_url ? (
+          // A worn Entry Banner with an `.svga` is the banner's own artwork, behind the name.
+          <View style={{ position: 'absolute', left: 0, right: 0, top: px(-35), height: px(100) }}>
+            <SvgaPlayer url={arrival.banner.animation_url} style={StyleSheet.absoluteFill} />
+          </View>
+        ) : null}
         <LinearGradient
-          colors={[from, to]}
+          colors={arrival.banner?.animation_url ? ['transparent', 'transparent'] : [from, to]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
-          style={{ height: px(44), borderRadius: px(22), flexDirection: 'row', alignItems: 'center', paddingHorizontal: px(8), gap: px(8), borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' }}
+          style={{ height: px(arrival.banner?.animation_url ? 30 : 44), borderRadius: px(22), flexDirection: 'row', alignItems: 'center', paddingHorizontal: px(8), gap: px(8), borderWidth: arrival.banner?.animation_url ? 0 : 1, borderColor: 'rgba(255,255,255,0.5)' }}
         >
           {arrival.vip ? (
             <View style={{ paddingHorizontal: px(7), height: px(18), borderRadius: px(9), backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center' }}>
@@ -111,7 +122,13 @@ export function EntranceBanner({ entrance, onDone }: { entrance: Entrance; onDon
         </LinearGradient>
       </Animated.View>
 
-      {arrival.effect?.image_url ? (
+      {svgaUrl ? (
+        <View style={{ position: 'absolute', left: 0, right: 0, top: px(90), bottom: px(120) }}>
+          <SvgaPlayer url={svgaUrl} loops={1} style={StyleSheet.absoluteFill} />
+        </View>
+      ) : null}
+
+      {arrival.effect?.image_url && !svgaUrl ? (
         <Animated.Image
           source={{ uri: arrival.effect.image_url }}
           resizeMode="contain"

@@ -73,17 +73,19 @@ const REWARD_ART: Record<string, ImageSourcePropType> = {
   frame: require('../../assets/weekly-star/reward-frame.png'),
   badge: require('../../assets/weekly-star/reward-medal.png'),
   coins: require('../../assets/weekly-star/reward-coins.png'),
+  diamonds: require('../../assets/home/reward-diamonds.png'),
 };
 
-// Nothing in the API names which gifts count yet, so until `event_gifts` is sent
-// the three tiles show Figma's sample prices on empty tiles.
+// `event_gifts` is what the admin picked; only an event that never sends it (the older,
+// ranking-rule Weekly Star, or before the event loads) falls back to Figma's samples.
 const SAMPLE_GIFTS: EventGift[] = [
   { id: -1, name: '', price: 9999, thumbnail_url: null },
   { id: -2, name: '', price: 8999, thumbnail_url: null },
   { id: -3, name: '', price: 6999, thumbnail_url: null },
 ];
 
-type CatalogItem = { name: string; icon_url: string | null; handler_key: string };
+/** `image_url` is the granted thing's own picture (the frame, the medal…), else null. */
+type CatalogItem = { name: string; icon_url: string | null; image_url?: string | null; handler_key: string };
 type TierReward = {
   id: number;
   reward_value: number | null;
@@ -206,7 +208,7 @@ export default function WeeklyStarScreen() {
           <RulesButton onPress={() => setRulesOpen(true)} />
 
           {tab === 'ranking' ? (
-            <EventGifts gifts={event?.event_gifts?.length ? event.event_gifts : SAMPLE_GIFTS} />
+            <EventGifts gifts={event?.event_gifts ?? SAMPLE_GIFTS} />
           ) : (
             <RewardCards tiers={event?.tiers ?? []} />
           )}
@@ -391,7 +393,9 @@ function EventGifts({ gifts }: { gifts: EventGift[] }) {
 }
 
 function rewardIcon(r: TierReward) {
-  if (r.catalog.icon_url) return { source: { uri: r.catalog.icon_url }, box: CUSTOM_ICON };
+  // The real item (the admin's icon, else the frame / medal / VIP badge itself) beats Figma's generic art.
+  const uri = r.catalog.image_url ?? r.catalog.icon_url;
+  if (uri) return { source: { uri }, box: CUSTOM_ICON };
   const slot = REWARD_ICON[r.catalog.handler_key];
   const source = REWARD_ART[r.catalog.handler_key];
   // VIP has no icon in Figma — its tile is left plain.

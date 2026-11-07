@@ -53,7 +53,7 @@ export default function RankingScreen() {
   // Opens on Rich unless the caller asks for a board.
   const [board, setBoard] = useState<Board>(route.params?.board ?? 'wealth');
   const [period, setPeriod] = useState<Period>('daily');
-  const entries = useBoard(board, period);
+  const { entries } = useBoard(board, period);
 
   useFocusEffect(
     useCallback(() => {

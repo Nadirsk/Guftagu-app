@@ -6,6 +6,7 @@ import BottomNav, { type NavKey } from '../screens/home/BottomNav';
 import HomeFeedScreen from '../screens/home/HomeFeedScreen';
 import PartyScreen from '../screens/party/PartyScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
+import { useFullAccess } from '../auth/access';
 import { colors } from '../theme/tokens';
 
 /**
@@ -32,6 +33,7 @@ const SCREENS: Partial<Record<NavKey, (go: { openExplore: () => void; exploreFir
 };
 
 export default function TabShell() {
+  const fullAccess = useFullAccess();
   const [active, setActive] = useState<NavKey>('Home');
   // Set when Party was reached from the Live card, so it opens on Explore; the bar's own Party tap opens Related.
   const [exploreFirst, setExploreFirst] = useState(false);
@@ -52,8 +54,10 @@ export default function TabShell() {
         active={active}
         // The Party and Chats frames draw the bar white (687:6916, 687:7071); the dark home keeps its own.
         tone={active === 'Party' || active === 'Chats' ? 'light' : 'dark'}
+        disabled={fullAccess ? [] : ['Party', 'Chats', 'Mine']}
         onSelect={(key) => {
           if (!SCREENS[key]) return;
+          if (!fullAccess && key !== 'Home') return;
           setExploreFirst(false);
           setActive(key);
         }}

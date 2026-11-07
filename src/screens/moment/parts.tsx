@@ -5,6 +5,8 @@ import { SvgXml } from 'react-native-svg';
 import * as icons from '../../assets/home/icons';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
+import { LevelBadges } from '../level/LevelBadge';
+import { type AvatarFrame, UserAvatar } from '../../components/UserAvatar';
 
 /**
  * The pieces the Moment feed (25:451 / 96:1072) and Post Details (77:799 /
@@ -176,8 +178,15 @@ export type PostAuthor = {
   guftagu_id: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  /** The frame they wear from the Item Bag; null when none. */
+  frame?: AvatarFrame | null;
   /** Added to the presenter for the feed's "- India" suffix. */
   country: string | null;
+  /** `male` | `female` | `undisclosed`; the Visitors list badges avatars with it. */
+  gender?: string | null;
+  /** Wealth / charm levels, for the grade medals next to the name. */
+  wealth_level?: number;
+  charm_level?: number;
 };
 
 /** `SocialPresenter::post()`. `body` and `liked_by_me` are dropped when null. */
@@ -311,21 +320,14 @@ export function WaveBadge() {
   );
 }
 
-/** Node 73:695 — one flattened bitmap of the level pill and the heart. */
-export function BadgeStrip({ left, top }: { left: number; top: number }) {
+/** Node 73:695's slot — the author's wealth and charm grade medals (was a static bitmap). */
+export function BadgeStrip({ left, top, author }: { left: number; top: number; author: PostAuthor | null }) {
   const { px } = useDesignScale();
 
   return (
-    <Image
-      source={badgeStrip}
-      style={{
-        position: 'absolute',
-        left: px(left + AUTHOR.badges.imageX),
-        top: px(top),
-        width: px(AUTHOR.badges.imageWidth),
-        height: px(AUTHOR.badges.height),
-      }}
-    />
+    <View style={{ position: 'absolute', left: px(left), top: px(top) }}>
+      <LevelBadges user={author} height={AUTHOR.badges.height} />
+    </View>
   );
 }
 
@@ -361,16 +363,11 @@ export function AuthorRow({
       }}
     >
       <Pressable onPress={onPressName} disabled={!onPressName}>
-        <Image
+        <UserAvatar
           source={avatarSource(post)}
-          style={{
-            position: 'absolute',
-            left: px(avatar.x),
-            top: px(avatar.y),
-            width: px(avatar.size),
-            height: px(avatar.size),
-            borderRadius: px(avatar.size / 2),
-          }}
+          frame={post.author?.frame}
+          size={px(avatar.size)}
+          style={{ position: 'absolute', left: px(avatar.x), top: px(avatar.y) }}
         />
         {post.live ? <WaveBadge /> : null}
       </Pressable>
@@ -401,7 +398,7 @@ export function AuthorRow({
         </Text>
       </Pressable>
 
-      <BadgeStrip left={name.x} top={name.y + name.height + name.gap} />
+      <BadgeStrip left={name.x} top={name.y + name.height + name.gap} author={post.author} />
 
       {trailing ? (
         <View
