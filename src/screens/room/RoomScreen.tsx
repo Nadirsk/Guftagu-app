@@ -4,22 +4,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Alert,
-  Animated,
-  Easing,
-  Image,
-  Keyboard,
-  Pressable,
-  ScrollView,
-  type ScrollViewInstance,
-  StyleSheet,
-  Text,
-  TextInput,
-  Dimensions,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { Animated, Easing, Image, Keyboard, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, TextInput, Dimensions, useWindowDimensions, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import { Crown } from 'lucide-react-native';
 import { SvgXml } from 'react-native-svg';
 
@@ -40,7 +26,7 @@ import { CASUAL_FACES, CasualBubble, Composer, EmojiSheet } from './EmojiSheet';
 import { emojiSource } from '../../assets/room/emoji';
 import { ComboButton, GiftFx } from './GiftFx';
 import { LuckyWheelSheet } from './wheel';
-import { claimShare, EnvelopeClaimedPopup, EnvelopeOpenPopup, EnvelopeSheet, EnvelopeTile, type RedEnvelope } from './envelope';
+import { EnvelopeDrop, EnvelopeSheet } from './envelope';
 import {
   BACKDROP,
   CHAT,
@@ -67,7 +53,7 @@ import {
   type ToolKey,
   ToolsSheet,
 } from './sheets';
-import { type ChatMessage, type GiftEvent, type RoomUser, type Seat } from './useRoom';
+import { type ChatMessage, type GiftEvent, type RoomEnvelope, type RoomUser, type Seat } from './useRoom';
 import { UserAvatar } from '../../components/UserAvatar';
 import { RoomModeSheet, RoomThemeSheet, type SeatTemplate } from './roomSettings';
 import { MusicSheet } from './musicSheet';
@@ -98,8 +84,6 @@ type Overlay =
   | { kind: 'share' }
   | { kind: 'games' }
   | { kind: 'envelope' }
-  | { kind: 'envelopeOpen' }
-  | { kind: 'envelopeClaimed' }
   | { kind: 'wheel' };
 
 /** A host tool waiting for its seat: Tools → Kick-Out / Mute / Seat Lock, then tap. */
@@ -189,8 +173,12 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
   const [recentEmoji, setRecentEmoji] = useState(['😍', '😊', '😃', '🤫', '😘']);
   const [followed, setFollowed] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  // Section 575:2742. Kept on this screen only: the server has no red envelopes yet.
-  const [envelope, setEnvelope] = useState<RedEnvelope | null>(null);
+  // Section 575:2742. The packets live on the server (room.envelopes), which leaves out your own
+  // and the ones you already opened. The one being opened stays pinned until its result card closes,
+  // because claiming drops it from the list straight away.
+  const [pinnedEnvelope, setPinnedEnvelope] = useState<RoomEnvelope | null>(null);
+  const waitingEnvelopes = room.envelopes.filter((e) => e.sender.uuid !== room.me?.uuid);
+  const shownEnvelope = pinnedEnvelope ?? waitingEnvelopes[0] ?? null;
   const toast = useToast();
 
   useEffect(() => {
@@ -262,6 +250,7 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
 
     if (seat.locked) {
       if (isHost) run(() => room.lockSeat(seat.seat_number, false), 'Seat unlocked');
+      else toast.show('This seat is locked by the host');
       return;
     }
     if (!seat.user) {
@@ -282,7 +271,8 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
     Alert.alert(user.display_name ?? 'Guftagu user', undefined, [
       { text: 'View profile card', onPress: () => setOverlay({ kind: 'profileCard', user }) },
       { text: 'Send a gift', onPress: () => setOverlay({ kind: 'gifts', receiver: user }) },
-      { text: seat.muted ? 'Unmute' : 'Mute', onPress: () => run(() => room.muteSeat(seat.seat_number, !seat.muted)) },
+      { text: seat.muted ? 'Unmute' : 'Mute', onPress: () => run(() => room.muteSeat(seat.seat_number, !seat.muted), seat.muted ? 'Unmuted' : 'Muted') },
+      { text: 'Remove from mic', onPress: () => run(() => room.removeFromSeat(seat.seat_number), 'Removed from mic') },
       { text: 'Kick out', style: 'destructive', onPress: () => setOverlay({ kind: 'kickout', user }) },
       { text: 'Cancel', style: 'cancel' },
     ]);
@@ -534,9 +524,18 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
         <Text numberOfLines={1} style={[styles.regular, { marginTop: px(2), textAlign: 'center', fontSize: px(SIDE.wheel.label.size), color: colors.white }]}>Lucky Wheel</Text>
       </Pressable>
 
-      {/* The envelope stays in the room until you have claimed it or it is empty. */}
-      {envelope && me && envelope.claims.length < envelope.count && !envelope.claims.some((c) => c.user.uuid === me.uuid) ? (
-        <EnvelopeTile extra={extra} onPress={() => setOverlay({ kind: 'envelopeOpen' })} />
+      {/* Someone else's envelope sits in the middle of the room until you open it or it runs out. */}
+      {shownEnvelope ? (
+        <EnvelopeDrop
+          key={shownEnvelope.uuid}
+          envelope={shownEnvelope}
+          more={waitingEnvelopes.filter((e) => e.uuid !== shownEnvelope.uuid).length}
+          onClaim={() => {
+            setPinnedEnvelope(shownEnvelope);
+            return room.claimEnvelope(shownEnvelope.uuid);
+          }}
+          onDone={() => setPinnedEnvelope(null)}
+        />
       ) : null}
 
       {room.casuals.map((c) => {
@@ -721,32 +720,23 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
         <EnvelopeSheet
           extra={extra}
           onClose={() => setOverlay(null)}
-          onSend={(gold, count) => {
-            setEnvelope({ id: `local-${Date.now()}`, sender: { uuid: me.uuid, display_name: me.display_name ?? null, avatar_url: me.avatar_url ?? null }, gold, count, claims: [] });
-            setOverlay(null);
-          }}
-        />
-      ) : null}
-      {overlay?.kind === 'envelopeOpen' && envelope ? (
-        <EnvelopeOpenPopup
-          extra={extra}
-          sender={envelope.sender}
-          onClose={() => setOverlay(null)}
-          onOpen={() => {
-            if (me && !envelope.claims.some((c) => c.user.uuid === me.uuid)) {
-              const user: RoomUser = { uuid: me.uuid, display_name: me.display_name ?? null, avatar_url: me.avatar_url ?? null };
-              setEnvelope({ ...envelope, claims: [...envelope.claims, { user, amount: claimShare(envelope), at: new Date() }] });
+          onSend={async (gold, count) => {
+            try {
+              await room.sendEnvelope(gold, count);
+              setOverlay(null);
+              toast.show('Red envelope sent ✓');
+            } catch (e) {
+              if (e instanceof ApiError && e.code === 'INSUFFICIENT_COINS') {
+                setOverlay(null);
+                Alert.alert('Not enough coins', `A red packet of ${gold.toLocaleString('en-US')} coins needs more than you have. Recharge to send it.`, [
+                  { text: 'Not now', style: 'cancel' },
+                  { text: 'Recharge', onPress: () => navigation.navigate('Wallet', { tab: 'coin' }) },
+                ]);
+              } else {
+                Alert.alert('Red packet', e instanceof ApiError ? e.displayMessage : 'Could not send the red packet.');
+              }
             }
-            setOverlay({ kind: 'envelopeClaimed' });
           }}
-        />
-      ) : null}
-      {overlay?.kind === 'envelopeClaimed' && envelope ? (
-        <EnvelopeClaimedPopup
-          extra={extra}
-          envelope={envelope}
-          mine={envelope.claims.find((c) => c.user.uuid === me?.uuid) ?? null}
-          onClose={() => setOverlay(null)}
         />
       ) : null}
       {overlay?.kind === 'kickout' ? (
@@ -763,10 +753,11 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
       {overlay?.kind === 'gifts' ? (
         <GiftSheet
           receiver={overlay.receiver}
-          onMic={seats.flatMap((s) => (s.user && s.user.uuid !== me?.uuid ? [{ seat: s.seat_number, user: s.user }] : []))}
+          // Everyone on a mic is a recipient — the owner and yourself included, as in Mazag.
+          onMic={seats.flatMap((s) => (s.user ? [{ seat: s.seat_number, user: s.user }] : []))}
           onClose={() => setOverlay(null)}
           onSend={(gift, quantity, targets) => {
-            const to = targets === 'all' ? seats.flatMap((s) => (s.user && s.user.uuid !== me?.uuid ? [s.user] : [])) : targets;
+            const to = targets === 'all' ? seats.flatMap((s) => (s.user ? [s.user] : [])) : targets;
             const batch = to.length > 1 ? `local-${Date.now()}` : null;
             const mine: RoomUser | null = me ? (seats.find((s) => s.user?.uuid === me.uuid)?.user ?? (snapshot?.owner?.uuid === me.uuid ? snapshot.owner : null)) ?? { uuid: me.uuid, display_name: me.display_name ?? null, avatar_url: me.avatar_url ?? null } : null;
             // Mazag plays it the instant you tap: close the sheet, draw the gift, settle the bill after.
@@ -1122,10 +1113,10 @@ function EntryRow({ user, text }: { user: RoomUser | null; text: string }) {
     >
       <LevelBadges user={user} height={c.badges.height} />
       {/* One line, like Mazag: a long name is cut with "…" and the "entered …" part stays whole. */}
-      <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.medium, { flexShrink: 1, fontSize: px(13), color: YELLOW }]}>
+      <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.medium, { flexShrink: 0, maxWidth: px(c.width * 0.34), fontSize: px(13), color: YELLOW }]}>
         {user?.display_name ?? 'Guftagu user'}
       </Text>
-      <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.regular, { flexShrink: 0, maxWidth: px(c.width * 0.6), fontSize: px(13), color: colors.white }]}>
+      <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.regular, { flexShrink: 1, fontSize: px(13), color: colors.white }]}>
         {text}
       </Text>
     </View>

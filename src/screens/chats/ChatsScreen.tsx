@@ -2,7 +2,8 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronRight, Pin } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
+import { BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import { SvgXml } from 'react-native-svg';
 
 import { api, ApiError } from '../../api/client';

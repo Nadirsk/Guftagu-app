@@ -3,6 +3,7 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
 import * as icons from '../../assets/home/icons';
+import LevelMeter from '../../components/LevelMeter';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
 import { HERO, LIVE_CARD } from './geometry';
@@ -111,9 +112,10 @@ export default function HeroCard({ originY = 0, onPress }: { originY?: number; o
 
       {/* node 483:2751 — the large viewer-count tab */}
       <View style={{ position: 'absolute', left: px(badge.x), top: px(badge.y) }}>
-        <SvgXml xml={icons.heroBadge} width={px(badge.width)} height={px(badge.height)} />
-        <View style={{ position: 'absolute', left: px(badgeWave.x), top: px(badgeWave.y) }}>
-          <SvgXml xml={icons.heroWave} width={px(badgeWave.width)} height={px(badgeWave.height)} />
+        <SvgXml xml={icons.heroBadge.replace('fill-opacity="0.32"', 'fill-opacity="0.85"')} width={px(badge.width)} height={px(badge.height)} />
+        {/* Vector 1: 27 x 23, five 3px bars of 4.4, 2.2, 13.3, 20 and 4.4 long, now bouncing like Party's meter. */}
+        <View style={{ position: 'absolute', left: px(badgeWave.x), top: px(badgeWave.y), width: px(badgeWave.width), height: px(badgeWave.height), alignItems: 'center', justifyContent: 'center' }}>
+          <LevelMeter heights={[7.44, 5.22, 16.33, 23, 7.44]} width={3} gap={3} />
         </View>
         <Text
           style={[

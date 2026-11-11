@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Alert, DevSettings } from 'react-native';
+import { DevSettings } from 'react-native';
+import { Alert } from './AppAlert';
 
 import { setLanguage } from '../i18n';
 import { LANGUAGES } from '../i18n/languages';

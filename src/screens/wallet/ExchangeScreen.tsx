@@ -1,9 +1,11 @@
 import { useNavigation } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import { SvgXml } from 'react-native-svg';
 
-import { api } from '../../api/client';
+import { api, ApiError } from '../../api/client';
+import { peek, refresh } from '../../lib/swrCache';
 import * as icons from '../../assets/wallet/icons';
 import { useAuth } from '../../auth/AuthContext';
 import { useDesignScale } from '../../theme/layout';
@@ -12,11 +14,12 @@ import { colors, typography } from '../../theme/tokens';
 /**
  * Exchange — Points into Coins. The entry state (Figma 205:5143) types the amount on the
  * design's dark keypad; the black disc moves to the confirm state (209:7154) with its
- * Cancel / Confirm. The server has no exchange endpoint yet, so Confirm only says so,
- * and the rate below (122 points → 2 coins in the design) is a placeholder.
+ * Cancel / Confirm. Confirm calls `POST /wallet/exchange` (points = diamonds). The rate below
+ * (122 points → 2 coins in the design) is a placeholder and must match
+ * `guftagu.diamonds_per_coin` on the server.
  */
 
-const EXCHANGE_RATE = 61; // points per coin, from the design's 122 → 2
+const EXCHANGE_RATE = 5; // points (diamonds) per coin; same as guftagu.diamonds_per_coin on the server
 const KEY_FILL = '#6B6B6B'; // Dark/Primary Key Background
 const KEYBOARD_FILL = 'rgba(21,21,21,0.85)';
 const LINE = 1.28;
@@ -53,23 +56,45 @@ export default function ExchangeScreen() {
   const { px } = useDesignScale();
   const navigation = useNavigation();
   const { token } = useAuth();
-  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [wallet, setWallet] = useState<Wallet | null>(() => peek<Wallet>('/wallet', token));
   const [digits, setDigits] = useState('');
   const [confirming, setConfirming] = useState(false);
-
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
-    let live = true;
-    api<Wallet>('/wallet', { token })
-      .then((data) => live && setWallet(data))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
+    return refresh<Wallet>('/wallet', token, setWallet);
   }, [token]);
 
   const points = digits === '' ? 0 : Number(digits);
   const coins = Math.floor(points / EXCHANGE_RATE);
   const press = (d: string) => setDigits((cur) => (cur === '' && d === '0' ? cur : (cur + d).slice(0, 9)));
+
+  // Opening the confirm step only makes sense with something to exchange and enough to spend.
+  const openConfirm = () => {
+    if (coins < 1) return Alert.alert('Exchange', `Enter at least ${EXCHANGE_RATE} to get 1 coin.`);
+    if (wallet && points > wallet.diamond_balance) return Alert.alert('Exchange', 'You do not have that many points.');
+    setConfirming(true);
+  };
+
+  const confirm = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      // Whole multiples only; the server keeps any remainder in the wallet.
+      const res = await api<{ coins_added: number; coin_balance: number; diamond_balance: number }>('/wallet/exchange', {
+        method: 'POST',
+        token,
+        body: { diamonds: coins * EXCHANGE_RATE },
+      });
+      setWallet((w) => ({ ...(w as Wallet), coin_balance: res.coin_balance, diamond_balance: res.diamond_balance }));
+      setDigits('');
+      setConfirming(false);
+      Alert.alert('Exchange', `${res.coins_added} coins added to your balance.`);
+    } catch (e) {
+      Alert.alert('Exchange', e instanceof ApiError ? e.displayMessage : 'Could not complete the exchange.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const at = (left: number, top: number) => ({ position: 'absolute' as const, left: px(left), top: px(top) });
   const text = (size: number, weight: 'regular' | 'medium' | 'semiBold' = 'regular') => ({
@@ -120,7 +145,7 @@ export default function ExchangeScreen() {
       </View>
 
       {/* Ellipse 1981 + arrow: the black disc between them. */}
-      <Pressable onPress={() => setConfirming(true)} style={[at(disc.left, disc.top), { width: px(52), height: px(52) }]} accessibilityLabel="Exchange">
+      <Pressable onPress={openConfirm} style={[at(disc.left, disc.top), { width: px(52), height: px(52) }]} accessibilityLabel="Exchange">
         <SvgXml xml={icons.swapDisc} width={px(52)} height={px(52)} />
         <SvgXml xml={icons.arrowBackWhite} width={px(24)} height={px(24)} style={{ position: 'absolute', left: px(14), top: px(14), transform: [{ rotate: '-90deg' }] }} />
       </Pressable>
@@ -132,8 +157,9 @@ export default function ExchangeScreen() {
             <Text style={[text(17), { opacity: 0.5 }]}>Cancel</Text>
           </Pressable>
           <Pressable
-            onPress={() => Alert.alert('Exchange', 'Exchanging points is not available yet.')}
-            style={[at(202, 768), pill, { width: px(187), backgroundColor: colors.black }]}
+            onPress={confirm}
+            disabled={busy}
+            style={[at(202, 768), pill, { width: px(187), backgroundColor: colors.black, opacity: busy ? 0.6 : 1 }]}
           >
             <Text style={[text(17), { color: '#FFFDFD' }]}>Confirm</Text>
           </Pressable>

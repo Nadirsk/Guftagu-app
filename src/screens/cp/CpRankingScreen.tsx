@@ -1,13 +1,15 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { setStatusBarStyle } from 'expo-status-bar';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Image, type ImageSourcePropType, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
+import { api } from '../../api/client';
 import * as cpIcons from '../../assets/cp/icons';
 import * as settingsIcons from '../../assets/settings/icons';
 import * as walletIcons from '../../assets/wallet/icons';
+import { useAuth } from '../../auth/AuthContext';
 import { useDesignScale } from '../../theme/layout';
 import { typography } from '../../theme/tokens';
 
@@ -16,7 +18,23 @@ import { typography } from '../../theme/tokens';
  * CP Reward (2015:10693) and CP Plaza (2015:10755), one screen switched by the three pills.
  * The frames are 440 wide, so every figure is scaled by 402 / 440. The server serves no CP
  * pairs yet, so the cards show the design's own empty slots and its sample "3,505k".
+ * The CP Reward tab's four slots per card are the rewards the admin set for that place:
+ * `GET /rankings/rewards?board=cp&period=weekly` (Top 6-10 reads the band that covers #6).
  */
+
+type CpReward = {
+  id: number;
+  rank_from: number;
+  rank_to: number;
+  reward_type: string;
+  reward_value: number;
+  duration_days: number | null;
+  item: { id: number; type: string; name: string; image_url: string | null } | null;
+};
+
+const COINS = require('../../assets/weekly-star/reward-coins.png');
+const DIAMONDS = require('../../assets/home/reward-diamonds.png');
+const SLOTS_PER_CARD = 4;
 
 const FRAME = 440;
 const art = {
@@ -68,6 +86,19 @@ export default function CpRankingScreen() {
   const [tab, setTab] = useState<Tab>('ranking');
   const [thisWeek, setThisWeek] = useState(true);
   const [rules, setRules] = useState(false);
+  const { token } = useAuth();
+  const [cpRewards, setCpRewards] = useState<CpReward[]>([]);
+
+  // No CP rule or no rewards set answers an error or an empty list: the slots stay as drawn.
+  useEffect(() => {
+    let live = true;
+    api<{ rewards: CpReward[] }>('/rankings/rewards?board=cp&period=weekly', { token })
+      .then((data) => live && setCpRewards(data.rewards))
+      .catch(() => live && setCpRewards([]));
+    return () => {
+      live = false;
+    };
+  }, [token]);
 
   useFocusEffect(
     useCallback(() => {
@@ -105,6 +136,37 @@ export default function CpRankingScreen() {
     </View>
   );
 
+  /**
+   * The four reward slots of a CP Reward card, in the design's 2 x 2 grid, filled from the
+   * admin's rewards for `rank`. An unfilled slot keeps the design's empty frame.
+   */
+  const rewardSlots = (rank: number, top: number) => {
+    const mine = cpRewards.filter((r) => r.rank_from <= rank && r.rank_to >= rank).slice(0, SLOTS_PER_CARD);
+    return [0, 1].flatMap((row) =>
+      [95, 250].map((x, col) => {
+        const reward = mine[row * 2 + col];
+        const y = top + row * 93;
+        return (
+          <View key={`${row}-${x}`}>
+            <Image source={art.token} style={box(x, y, 72, 72)} />
+            {reward ? (
+              <>
+                <Image
+                  source={reward.item ? (reward.item.image_url ? { uri: reward.item.image_url } : art.token) : reward.reward_type === 'diamonds' ? DIAMONDS : COINS}
+                  resizeMode="contain"
+                  style={box(x + 10, y + 7, 52, 40)}
+                />
+                <Text numberOfLines={1} style={[centred(x + 36, y + 49, 68), font(11, 'semiBold')]}>
+                  {reward.item ? (reward.duration_days ? `${reward.duration_days} Day` : 'Forever') : reward.reward_value.toLocaleString('en-US')}
+                </Text>
+              </>
+            ) : null}
+          </View>
+        );
+      }),
+    );
+  };
+
   // Top 1 / 2 / 3: a framed card, the ribbon, two empty portrait slots and the score.
   const topCard = (y: number, label: string, withPair: boolean) => (
     <View key={label}>
@@ -121,13 +183,7 @@ export default function CpRankingScreen() {
           {pill(162, y + 237)}
         </>
       ) : (
-        <>
-          {[0, 1].map((row) =>
-            [95, 250].map((x) => (
-              <Image key={`${row}-${x}`} source={art.token} style={box(x, y + (label === 'Top 1' ? 114 : label === 'Top 2' ? 120 : 118) + row * 93, 72, 72)} />
-            )),
-          )}
-        </>
+        <>{rewardSlots(Number(label.replace('Top ', '')), y + (label === 'Top 1' ? 114 : label === 'Top 2' ? 120 : 118))}</>
       )}
     </View>
   );
@@ -152,9 +208,7 @@ export default function CpRankingScreen() {
           {pill(266, r + 142)}
         </>
       ) : (
-        [0, 1].map((row) =>
-          [95, 250].map((x) => <Image key={`${row}-${x}`} source={art.token} style={box(x, r + 86 + row * 93, 72, 72)} />),
-        )
+        rewardSlots(Number(label.replace('Top ', '').split('-')[0]), r + 86)
       )}
     </View>
   );

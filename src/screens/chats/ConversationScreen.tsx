@@ -4,22 +4,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Camera, Gift as GiftIcon, Image as ImageIcon, Keyboard as KeyboardIcon, Mic, Plus, Smile, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Image,
-  Keyboard,
-  Modal,
-  PanResponder,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  Text,
-  TextInput,
-  type TextInputInstance,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, Image, Keyboard, Modal, PanResponder, Pressable, ScrollView, StatusBar, Text, TextInput, type TextInputInstance, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import { SvgXml } from 'react-native-svg';
 
 import { api, ApiError, uploadFile } from '../../api/client';
@@ -123,7 +109,7 @@ function dayLabel(iso: string) {
 export default function ConversationScreen() {
   const { px } = useDesignScale();
   const navigation = useNavigation<Nav>();
-  const { uuid, peer, alias: initialAlias } = useRoute<RouteProp<RootStackParamList, 'Conversation'>>().params;
+  const { uuid, peer, alias: initialAlias, openGift } = useRoute<RouteProp<RootStackParamList, 'Conversation'>>().params;
   const { token, user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>(() => messageCache.get(uuid) ?? []);
   useEffect(() => {
@@ -145,7 +131,8 @@ export default function ConversationScreen() {
       };
     }, [token, uuid]),
   );
-  const [sheet, setSheet] = useState<'attach' | 'gift' | null>(null);
+  // Arriving from a profile's Send Gift opens the gift sheet straight away.
+  const [sheet, setSheet] = useState<'attach' | 'gift' | null>(openGift ? 'gift' : null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   // A picked photo waits here, full screen, until the user sends it or backs out.
   const [pending, setPending] = useState<{ uri: string; mime: string } | null>(null);

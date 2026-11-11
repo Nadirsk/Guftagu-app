@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 
-import { api, ApiError } from '../../api/client';
+import { peek, refresh } from '../../lib/swrCache';
 import type { RootStackParamList } from '../../navigation/types';
 import { HEADER } from './geometry';
 import { SettingsHeader, styles as s, useSettingsUnit } from './parts';
@@ -19,18 +19,14 @@ export default function LegalPageScreen() {
   const u = useSettingsUnit();
   const { params } = useRoute<RouteProp<RootStackParamList, 'LegalPage'>>();
   const { i18n } = useTranslation();
-  const [page, setPage] = useState<Page | null>(null);
+  const path = `/pages/${params.type}?lang=${i18n.language === 'hi' ? 'hi' : 'en'}`;
+  const [page, setPage] = useState<Page | null>(() => peek<Page>(path, null));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let live = true;
-    api<Page>(`/pages/${params.type}?lang=${i18n.language === 'hi' ? 'hi' : 'en'}`)
-      .then((p) => live && setPage(p))
-      .catch((e) => live && setError(e instanceof ApiError && e.status === 404 ? 'This page is not available yet.' : 'Could not load this page.'));
-    return () => {
-      live = false;
-    };
-  }, [i18n.language, params.type]);
+    setPage(peek<Page>(path, null));
+    return refresh<Page>(path, null, setPage, undefined, () => setError('Could not load this page.'));
+  }, [path]);
 
   const top = HEADER.back.y + HEADER.back.size + 40;
   return (

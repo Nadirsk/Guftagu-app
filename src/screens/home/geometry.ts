@@ -117,6 +117,24 @@ export const HERO = {
   badgeCount: { x: 41, y: 7, width: 20.574, height: 22.853, fontSize: 15 }, // node 483:2754
 } as const;
 
+/**
+ * Live tab, under the hero (Figma 463:2002). The story row is 7 discs from y 1086 (Create first, 47
+ * wide with its 55 disc centred, then 18 between), and the room grid starts at y 1195: cards 180 x 192,
+ * 16 apart, the right column 209.13 from the left in the first row and 207.57 after it.
+ */
+export const LIVE_STORIES = { x: 19, y: 1086, create: { width: 47, disc: 55, height: 54 }, disc: { width: 55, height: 54, ring: 2 }, gap: 18, nameGap: 5, nameSize: 14 } as const;
+export const LIVE_GRID = {
+  x: 16,
+  y: 1195,
+  card: { width: 180, height: 192, radius: 12 },
+  gapY: 16,
+  col2: { first: 209.13, rest: 207.57 },
+  badge: { x: 130, y: 16, width: 51.133, height: 34, count: { x: 161, y: 23, size: 14 }, wave: { x: 137, y: 26, size: 15 } },
+  flag: { x: 12, y: 130 },
+  name: { x: 37, y: 127, size: 12 },
+  faces: { x: 12, y: 152, size: 29, step: 12, ring: 1 },
+} as const;
+
 /** Family tab (479:2363) — the empty state and one suggested family. */
 export const FAMILY = {
   empty: { y: 812, size: 15, height: 19 },

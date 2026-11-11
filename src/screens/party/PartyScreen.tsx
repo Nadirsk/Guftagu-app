@@ -2,11 +2,12 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronRight } from 'lucide-react-native';
 import { setStatusBarStyle } from 'expo-status-bar';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
 import { api } from '../../api/client';
+import { peek, refresh as swr } from '../../lib/swrCache';
 import * as icons from '../../assets/home/icons';
 import { useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
@@ -14,6 +15,7 @@ import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
 import { LevelBadges, READABLE_BADGE_HEIGHT } from '../level/LevelBadge';
 import { BOTTOM_NAV_HEIGHT } from '../home/BottomNav';
+import LevelMeter from '../../components/LevelMeter';
 import type { AvatarFrame } from '../../components/UserAvatar';
 
 /**
@@ -93,61 +95,6 @@ type LiveRoom = {
   members: Person[];
 };
 
-/** The four equaliser bars beside the listener count (494:2416); each is 13px at full level, as Figma's tallest. */
-// Each bar bounces on its own period and floor, so together they read as a live level meter.
-const BAR_MOTION = [
-  { duration: 420, min: 0.35 },
-  { duration: 560, min: 0.3 },
-  { duration: 340, min: 0.4 },
-  { duration: 480, min: 0.25 },
-];
-
-function Bar({ height, duration, min, delay }: { height: number; duration: number; min: number; delay: number }) {
-  const { px } = useDesignScale();
-  const level = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(level, { toValue: 1, duration, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(level, { toValue: 0, duration, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ]),
-    );
-    const timer = setTimeout(() => loop.start(), delay);
-    return () => {
-      clearTimeout(timer);
-      loop.stop();
-    };
-  }, [level, duration, delay]);
-
-  // scaleY pivots on the bar's centre, so slide it down by the same amount to keep the base fixed.
-  const h = px(height);
-  return (
-    <Animated.View
-      style={{
-        width: px(3),
-        height: h,
-        backgroundColor: colors.black,
-        transform: [
-          { translateY: level.interpolate({ inputRange: [0, 1], outputRange: [(h * (1 - min)) / 2, 0] }) },
-          { scaleY: level.interpolate({ inputRange: [0, 1], outputRange: [min, 1] }) },
-        ],
-      }}
-    />
-  );
-}
-
-function Bars() {
-  const { px } = useDesignScale();
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: px(1), height: px(13) }}>
-      {BAR_MOTION.map((motion, i) => (
-        <Bar key={i} height={13} {...motion} delay={i * 90} />
-      ))}
-    </View>
-  );
-}
-
 /** Frame 1597881487 — a room: photo, name, listeners, level badges, chevron. */
 function RoomRow({ room, onPress }: { room: LiveRoom; onPress: () => void }) {
   const { px } = useDesignScale();
@@ -169,7 +116,7 @@ function RoomRow({ room, onPress }: { room: LiveRoom; onPress: () => void }) {
             {room.name ?? 'Guftagu room'}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(4), height: px(20) }}>
-            <Bars />
+            <LevelMeter heights={[13, 13, 13, 13]} width={3} gap={1} align="bottom" rounded={false} />
             <Text style={[styles.rowName, { fontSize: px(16), lineHeight: px(20) }]}>{room.listener_count}</Text>
           </View>
           {/* Figma's third line: the host's wealth / charm medals; then up to five
@@ -251,10 +198,12 @@ export default function PartyScreen({ initialSection = 'Related' }: { initialSec
     }
   }, [token, query]);
 
+  // Switching back to a tab already loaded shows it at once; the fetch only swaps it if it changed.
   useEffect(() => {
-    setRooms(null);
-    load();
-  }, [load]);
+    const path = `/rooms/live?limit=30&${query}`;
+    setRooms(peek<LiveRoom[]>(path, token));
+    return swr<LiveRoom[]>(path, token, setRooms, undefined, () => setRooms((r) => r ?? []));
+  }, [query, token]);
 
   const refresh = async () => {
     setRefreshing(true);

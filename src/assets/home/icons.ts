@@ -266,3 +266,14 @@ export const tabMine = `<svg preserveAspectRatio="none" overflow="visible" style
 </g>
 </svg>
 `;
+
+// The Live tab under the hero (Figma 463:2002): the viewer-count tab of a room card.
+export const liveBadgeA = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="51.1328" height="34" viewBox="0 0 51.1328 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path id="Union" d="M51.1328 34H18.8379V33.7627C17.9628 33.9173 17.0643 34 16.1475 34C7.22969 34 0 26.3888 0 17C0 7.61116 7.22969 0 16.1475 0C17.0642 2.35399e-05 17.9629 0.0817783 18.8379 0.236328V0H51.1328V34Z" fill="white" fill-opacity="0.32"/>
+</svg>`;
+export const liveBadgeB = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="51.2549" height="34" viewBox="0 0 51.2549 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path id="Union" d="M51.2549 34H18.8838V33.7627C18.0065 33.9173 17.1056 34 16.1865 34C7.24738 34 0 26.3888 0 17C0 7.61116 7.24738 0 16.1865 0C17.1056 2.11301e-05 18.0065 0.0817372 18.8838 0.236328V0H51.2549V34Z" fill="white" fill-opacity="0.32"/>
+</svg>`;
+export const liveBadgeC = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="51.2549" height="34" viewBox="0 0 51.2549 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path id="Union" d="M51.2549 34H18.8838V33.7627C18.0065 33.9173 17.1056 34 16.1865 34C7.24738 34 0 26.3888 0 17C0 7.61116 7.24738 0 16.1865 0C17.1056 2.15465e-05 18.0065 0.0817369 18.8838 0.236328V0H51.2549V34Z" fill="white" fill-opacity="0.32"/>
+</svg>`;

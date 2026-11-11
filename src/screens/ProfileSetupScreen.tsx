@@ -4,17 +4,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { ArrowLeft, CalendarDays, Camera, ChevronDown, Images, Lock, User } from 'lucide-react-native';
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Alert,
-  Image,
-  Keyboard,
-  Linking,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Image, Keyboard, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert } from '../components/AppAlert';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ApiError } from '../api/client';

@@ -2,18 +2,8 @@ import { StackActions, useNavigation, useRoute, type RouteProp } from '@react-na
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ArrowLeft, Ban, BellOff, ChevronRight, Flag, LogOut, Pencil, Pin, Trash } from 'lucide-react-native';
 import { type ComponentType, useEffect, useState } from 'react';
-import {
-  Alert,
-  Keyboard,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api, ApiError } from '../../api/client';
@@ -135,7 +125,14 @@ export default function ChatSettingsScreen() {
     } else if (key === 'pin') {
       run('pin', () => api(`/conversations/${uuid}/pin`, { method: 'POST', body: { pinned: !state.pin }, token }), { pin: !state.pin });
     } else {
-      run('block', () => api(`/users/${peer.uuid}/block`, { method: state.block ? 'DELETE' : 'POST', token }), { block: !state.block });
+      const doBlock = () => run('block', () => api(`/users/${peer.uuid}/block`, { method: state.block ? 'DELETE' : 'POST', token }), { block: !state.block });
+      // Unblocking is harmless; blocking asks first.
+      if (state.block) doBlock();
+      else
+        Alert.alert('Block this person?', 'They will not be able to message or call you. You can unblock them any time from Settings → Block List.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Block', style: 'destructive', onPress: doBlock },
+        ]);
     }
   };
 
@@ -299,6 +296,8 @@ export default function ChatSettingsScreen() {
           </Text>
           {alias ? <Text style={[styles.rowHint, { marginTop: px(1), fontSize: px(13) }]}>{nameOf(peer)}</Text> : null}
           {peer.guftagu_id ? <Text style={[styles.rowHint, { marginTop: px(2), fontSize: px(12.5) }]}>ID: {peer.guftagu_id}</Text> : null}
+          {/* The slot is always there (a placeholder until the server answers, "Following" once followed),
+              so the groups below never jump when this changes. */}
           {following === false ? (
             <Pressable
               onPress={follow}
@@ -311,7 +310,16 @@ export default function ChatSettingsScreen() {
             >
               <Text style={[styles.followLabel, { fontSize: px(14) }]}>Follow</Text>
             </Pressable>
-          ) : null}
+          ) : (
+            <View
+              style={[
+                styles.follow,
+                { marginTop: px(14), height: px(38), paddingHorizontal: px(24), borderRadius: px(19), backgroundColor: 'transparent', opacity: following === true ? 1 : 0 },
+              ]}
+            >
+              <Text style={[styles.followLabel, { fontSize: px(14), color: '#6B7280' }]}>Following</Text>
+            </View>
+          )}
         </View>
 
         {renderGroup('Chat', chatRows)}

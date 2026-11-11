@@ -2,7 +2,8 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { setStatusBarStyle } from 'expo-status-bar';
 import { type ReactNode, useCallback, useEffect, useId, useState } from 'react';
-import { Alert, BackHandler, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import Svg, { Defs, LinearGradient, Rect, Stop, SvgXml } from 'react-native-svg';
 
 import { api, ApiError } from '../../api/client';

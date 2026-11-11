@@ -16,8 +16,11 @@ import {
 import { SvgXml } from 'react-native-svg';
 
 import { api, ApiError } from '../../api/client';
+import { peek, refresh } from '../../lib/swrCache';
 import * as icons from '../../assets/room/icons';
 import { useAuth } from '../../auth/AuthContext';
+import { Alert } from '../../components/AppAlert';
+import LevelMeter from '../../components/LevelMeter';
 import type { RootStackParamList } from '../../navigation/types';
 import { useDesignScale } from '../../theme/layout';
 import { Backpack, Mic, ShoppingBag } from 'lucide-react-native';
@@ -125,15 +128,15 @@ export function RoomDrawer({
   const { px } = useDesignScale();
   const { token } = useAuth();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [rooms, setRooms] = useState<LiveRoom[] | null>(null);
+  const roomsPath = `/rooms/live?limit=20&except=${roomUuid}`;
+  // Reopened: show what was fetched last time at once and only swap if it changed.
+  const [rooms, setRooms] = useState<LiveRoom[] | null>(() => peek<LiveRoom[]>(roomsPath, token));
   const c = DRAWER.card;
   const btn = DRAWER.button;
 
   useEffect(() => {
-    api<LiveRoom[]>(`/rooms/live?limit=20&except=${roomUuid}`, { token })
-      .then(setRooms)
-      .catch(() => setRooms([]));
-  }, [roomUuid, token]);
+    return refresh<LiveRoom[]>(roomsPath, token, setRooms, undefined, () => setRooms((r) => r ?? []));
+  }, [roomsPath, token]);
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -238,8 +241,9 @@ export function RoomDrawer({
               <View style={{ position: 'absolute', left: px(c.count.x), top: px(c.count.y) }}>
                 <SvgXml xml={icons.liveCount} width={px(c.count.width)} height={px(c.count.height)} />
               </View>
-              <View style={{ position: 'absolute', left: px(c.count.waveX), top: px(c.count.waveY) }}>
-                <SvgXml xml={icons.liveWave} width={px(c.count.wave)} height={px(c.count.wave)} />
+              {/* The level meter beside the count — animated like Party's rows and the Live tab, not a still icon. */}
+              <View style={{ position: 'absolute', left: px(c.count.waveX), top: px(c.count.waveY), width: px(c.count.wave), height: px(c.count.wave), alignItems: 'center', justifyContent: 'center' }}>
+                <LevelMeter heights={[5.33, 3.67, 12, 17, 5.33]} width={2} gap={1.75} />
               </View>
               <Text
                 style={[
@@ -502,27 +506,37 @@ export function GiftSheet({
 }) {
   const { px } = useDesignScale();
   const { token } = useAuth();
-  const [gifts, setGifts] = useState<Gift[] | null>(null);
-  const [categories, setCategories] = useState<GiftCategory[]>([]);
+  const [gifts, setGifts] = useState<Gift[] | null>(() => peek<Gift[]>('/gifts', token));
+  const [categories, setCategories] = useState<GiftCategory[]>(() => peek<GiftCategory[]>('/gifts/categories', token) ?? []);
   const [category, setCategory] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [bag, setBag] = useState(false);
   const [quantity, setQuantity] = useState(1);
-  const [coins, setCoins] = useState<number | null>(null);
+  const [coins, setCoins] = useState<number | null>(() => peek<{ coin_balance: number }, number>('/wallet', token, (w) => w.coin_balance));
   // Mazag's faces are check marks: orange ring = ticked, white ring = not. ALL ticks every one.
   const [ticked, setTicked] = useState<Set<string>>(
     () => new Set(receiver && receiver !== 'all' ? [receiver.uuid] : onMic.map((m) => m.user.uuid)),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  /** Recharge: close the panel and open the Wallet on its Coin tab; Back returns to the room/chat. */
+  const goRecharge = () => {
+    onClose();
+    navigation.navigate('Wallet', { tab: 'coin' });
+  };
   const g = GIFTS;
   // In a chat there is no row of faces to pick from, so everything under it moves up.
   const off = dm ? g.tabs.y - g.faces.y - 6 : 0;
 
   useEffect(() => {
-    api<Gift[]>('/gifts', { token }).then(setGifts).catch(() => setGifts([]));
-    api<GiftCategory[]>('/gifts/categories', { token }).then(setCategories).catch(() => undefined);
-    api<{ coin_balance: number }>('/wallet', { token }).then((w) => setCoins(w.coin_balance)).catch(() => undefined);
+    const stops = [
+      refresh<Gift[]>('/gifts', token, setGifts, undefined, () => setGifts((g) => g ?? [])),
+      refresh<GiftCategory[]>('/gifts/categories', token, setCategories),
+      // The balance changes with every send, so it is always re-read; the key only keeps the last value.
+      refresh<{ coin_balance: number }, number>('/wallet', token, setCoins, (w) => w.coin_balance),
+    ];
+    return () => stops.forEach((s) => s());
   }, [token]);
 
   // There is no "All" tab: the first category is open until another is picked.
@@ -542,10 +556,20 @@ export function GiftSheet({
   const toggleAll = () => setTicked(everyone ? new Set() : new Set(onMic.map((m) => m.user.uuid)));
 
   const send = () => {
-    if (!chosen || ticked.size === 0) return;
+    if (!chosen) return;
+    if (ticked.size === 0) {
+      // Silence here looks like a broken Send button — say why nothing happened.
+      Alert.alert('Nobody to send to', dm ? 'Open the chat with the person you want to gift.' : 'Gifts go to the people on a mic. Take a seat or wait for someone to join one.');
+      return;
+    }
     const price = chosen.coin_price * quantity * ticked.size;
     if (coins !== null && price > coins) {
       setError('Not enough coins');
+      // Flow chart: not enough coins -> Wallet.
+      Alert.alert('Not enough coins', `This needs ${price.toLocaleString('en-US')} coins and you have ${coins.toLocaleString('en-US')}. Recharge to keep going.`, [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Recharge', onPress: goRecharge },
+      ]);
       return;
     }
     setError(null);
@@ -647,7 +671,10 @@ export function GiftSheet({
               return (
                 <Pressable
                   key={gift.id}
-                  onPress={() => setSelected(gift.id)}
+                  onPress={() => {
+                    setSelected(gift.id);
+                    setError(null);
+                  }}
                   style={{ width: '25%', height: px(g.grid.cardHeight), alignItems: 'center' }}
                 >
                   <View style={{ position: 'absolute', left: px(2), right: px(2), top: px(2), bottom: px(2), borderRadius: px(10), borderWidth: on ? px(1.5) : 0, borderColor: GIFT_COLORS.selectedBorder }} />
@@ -679,7 +706,9 @@ export function GiftSheet({
             <Coin size={px(15)} />
             <Text style={[styles.regular, { fontSize: px(14), color: colors.white }]}>{coins === null ? '—' : coins.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
             <View style={{ width: StyleSheet.hairlineWidth * 2, height: px(14), marginHorizontal: px(8), backgroundColor: 'rgba(255,255,255,0.3)' }} />
-            <Text style={[styles.regular, { fontSize: px(14), color: GIFT_COLORS.orange }]}>Recharge  ›</Text>
+            <Pressable onPress={goRecharge} hitSlop={px(10)} accessibilityRole="button" accessibilityLabel="Recharge">
+              <Text style={[styles.regular, { fontSize: px(14), color: GIFT_COLORS.orange }]}>Recharge  ›</Text>
+            </Pressable>
           </View>
 
           <View style={{ position: 'absolute', right: px(14), top: px((g.bar.height - g.bar.pill.height) / 2), width: px(g.bar.qty.width), height: px(g.bar.pill.height), borderRadius: px(g.bar.pill.radius), borderWidth: px(1), borderColor: GIFT_COLORS.orange, flexDirection: 'row', alignItems: 'center', overflow: 'hidden' }}>
@@ -719,6 +748,12 @@ function Coin({ size }: { size: number }) {
 
 // ---------------------------------------------------------------- Group 8778
 
+const SHARE_ICON_FACEBOOK = `<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="32" r="32" fill="#1877F2"/><path d="M35.6 64V39.5h8.2l1.3-9.6H35.6v-6.1c0-2.8.8-4.7 4.8-4.7h5.1v-8.6c-.9-.1-3.9-.4-7.4-.4-7.3 0-12.3 4.4-12.3 12.6v7.2h-8.2v9.6h8.2V64h5.8z" fill="#fff"/></svg>`;
+
+const SHARE_ICON_WHATSAPP = `<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="32" r="32" fill="#25D366"/><g transform="translate(14 14) scale(1.5)"><path fill="#fff" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></g></svg>`;
+
+const SHARE_ICON_FRIENDS = `<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="fr" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse"><stop stop-color="#7B5CFF"/><stop offset="1" stop-color="#E24BD0"/></linearGradient></defs><circle cx="32" cy="32" r="32" fill="url(#fr)"/><circle cx="25" cy="25" r="6.5" fill="#fff"/><path d="M12 44c0-6.6 5.8-11 13-11s13 4.4 13 11v1.5H12V44z" fill="#fff"/><circle cx="41.5" cy="26.5" r="5.5" fill="#fff" fill-opacity=".8"/><path d="M41 34c6.2 0 11 3.8 11 9.6V45.5H41.2c.3-.5.3-1 .3-1.5 0-3.6-1.5-7-4.4-9.2.9-.5 2-.8 3.9-.8z" fill="#fff" fill-opacity=".8"/></svg>`;
+
 export function ShareSheet({ extra, roomName, roomCode, onClose, onFriends }: { extra: number; roomName: string; roomCode: string; onClose: () => void; onFriends: () => void }) {
   const { px } = useDesignScale();
   const s = SHARE;
@@ -727,16 +762,16 @@ export function ShareSheet({ extra, roomName, roomCode, onClose, onFriends }: { 
   const targets = [
     {
       label: 'Facebook',
-      image: require('../../assets/room/share-facebook.png'),
+      xml: SHARE_ICON_FACEBOOK,
       onPress: () => Share.share({ message }),
     },
     {
       label: 'WhatsApp',
-      image: require('../../assets/room/share-whatsapp.png'),
+      xml: SHARE_ICON_WHATSAPP,
       onPress: () =>
         Linking.openURL(`whatsapp://send?text=${encodeURIComponent(message)}`).catch(() => Share.share({ message })),
     },
-    { label: 'Friends', image: require('../../assets/room/share-friends.png'), onPress: onFriends },
+    { label: 'Friends', xml: SHARE_ICON_FRIENDS, onPress: onFriends },
   ];
 
   return (
@@ -746,7 +781,7 @@ export function ShareSheet({ extra, roomName, roomCode, onClose, onFriends }: { 
         <Text style={[styles.semiBold, { position: 'absolute', left: 0, right: 0, top: px(s.title.y), textAlign: 'center', fontSize: px(s.title.size), color: colors.white }]}>Share to</Text>
         {targets.map((t, i) => (
           <Pressable key={t.label} onPress={t.onPress} style={{ position: 'absolute', left: px(s.items[i].centerX - 55), width: px(110), top: px(s.icon.y), alignItems: 'center' }}>
-            <Image source={t.image} resizeMode="cover" style={{ width: px(s.icon.size), height: px(s.icon.size) }} />
+            <SvgXml xml={t.xml} width={px(s.icon.size)} height={px(s.icon.size)} />
             <Text style={[styles.semiBold, { position: 'absolute', top: px(s.label.y - s.icon.y), fontSize: px(s.label.size), color: colors.white, opacity: 0.7 }]}>{t.label}</Text>
           </Pressable>
         ))}

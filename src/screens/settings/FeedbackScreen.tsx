@@ -1,7 +1,8 @@
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import { SvgXml } from 'react-native-svg';
 
 import { API_BASE_URL } from '../../api/client';
@@ -47,6 +48,9 @@ export default function FeedbackScreen() {
 
   const submit = async () => {
     if (!text.trim()) return Alert.alert('Feedback', 'Tell us what happened first.');
+    // Flow chart: feedback needs at least 10 words.
+    const words = text.trim().split(/\s+/).length;
+    if (words < 10) return Alert.alert('Feedback', `Please write at least 10 words so we can help you better (you wrote ${words}).`);
     if (!email.trim()) return Alert.alert('Feedback', 'Add an email so we can reply.');
     setBusy(true);
     try {

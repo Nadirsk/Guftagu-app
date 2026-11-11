@@ -34,6 +34,8 @@ export type RootStackParamList = {
   WeeklyStar: { uuid?: string } | undefined;
   /** Rich / Charm rankings (section 590:6566); `wealth` is the Rich board. */
   Ranking: { board?: 'wealth' | 'charm' } | undefined;
+  /** Somebody's public Profile (Figma 732:16069): About Me / Wall of honor / Moment. */
+  UserProfile: { uuid: string };
   /** Profile → Visitors / Followers / Following (Figma 2015:9671, 2015:9818). */
   ProfileList: { kind: ProfileListKind };
   /** Profile → Level: Wealth Level (2015:9314) / Charm Level (2015:9378), switchable on screen. */
@@ -54,9 +56,20 @@ export type RootStackParamList = {
   /** Wallet (Figma 188:966): Coin / Diamonds balance, payment methods, resellers. */
   Wallet: { tab?: 'coin' | 'diamonds' } | undefined;
   /** Wallet → clock icon: Coins history (Figma 211:7265). */
-  CoinsHistory: undefined;
+  CoinsHistory: { currency?: 'coin' | 'diamond' } | undefined;
   /** Wallet → Diamonds → Exchange: Points into Coins (Figma 205:5143 / 209:7154). */
   Exchange: undefined;
+  /** Home › Live › Create: Video / Video Party (Figma 2015:7863 / 2015:8311), then the host's live room (2015:7951) and its ended summary (2015:8140). */
+  CreateVideo: undefined;
+  LiveVideoRoom: { title: string; notice?: string; cover?: string | null; seats?: number };
+  LiveVideoEnded: { cover?: string | null; audience: number };
+  /** Diamonds → Withdraw (Figma 339:3066) and its method pages: empty / linked (340:3104, 345:6493), the list (340:3139), a link form (345:6470, 345:6519, 345:6548). */
+  Withdraw: undefined;
+  WithdrawMethod: undefined;
+  WithdrawMethodList: undefined;
+  WithdrawMethodForm: { kind: 'binance' | 'bank' | 'upi' };
+  /** Diamonds → Transfer (Figma 794:7871, dialog 797:7990). */
+  Transfer: undefined;
   /** Profile to Medals (Figma 560:3303) and its rules page (573:2638). */
   Medals: undefined;
   MedalRule: undefined;
@@ -75,7 +88,7 @@ export type RootStackParamList = {
   RankingReward: { board: 'wealth' | 'charm' };
   /** A DM thread (511:2459); `peer` paints the header before anything loads. */
   /** `alias` is the caller's private nickname for the peer, when the opener already has it, so the header shows it from the first frame. */
-  Conversation: { uuid: string; peer: ChatUser; alias?: string | null };
+  Conversation: { uuid: string; peer: ChatUser; alias?: string | null; openGift?: boolean };
   /** Chat Settings (514:2763) for that thread. */
   ChatSettings: { uuid: string; peer: ChatUser; alias?: string | null };
   /** Report a user (514:3014). */

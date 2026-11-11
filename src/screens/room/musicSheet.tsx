@@ -1,6 +1,7 @@
 import { ArrowLeft, CircleCheck, CloudUpload, Music2, Pause, Play, SkipBack, SkipForward, Trash2, Volume2 } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import { SvgXml } from 'react-native-svg';
 
 import * as icons from '../../assets/room/icons';

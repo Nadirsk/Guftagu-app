@@ -1,6 +1,7 @@
 import { Bell, BellOff, Check, Heart, type LucideIcon, MessageCircle, Sparkles } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Pressable, ScrollView, Text, View } from 'react-native';
+import { Animated, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';

@@ -4,7 +4,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronRight, EarthLock, MailMinus } from 'lucide-react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '../components/AppAlert';
 
 import { ApiError } from '../api/client';
 import { useSocialSignIn } from '../auth/social';

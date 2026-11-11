@@ -1,19 +1,24 @@
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useState } from 'react';
-import { Alert, Image, type ImageSourcePropType, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Image, type ImageSourcePropType, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import { SvgXml } from 'react-native-svg';
 
 import * as vip from '../../assets/vip/icons';
+import { TIER_SVGS, type TierSvgs } from '../../assets/vip/tierSvgs';
 import { useDesignScale } from '../../theme/layout';
 import { typography } from '../../theme/tokens';
 
 /**
  * Aristocracy Privileges (Figma 176:1116: VIP 1 is 176:1716, VIP 2 176:1865 …, 390 x 844, so every
  * figure is scaled by 402 / 390). One layout, one table per tier: its stage art, its price, and which
- * privileges it lists and where. The icons are the green VIP 1 vectors turned to the tier's hue
- * (`hue` degrees), which is how Figma recolours them; the stage art and emblems are the tier's own.
+ * privileges it lists and where. VIP 1-3 draw the green VIP 1 vectors turned to the tier's hue
+ * (`hue` degrees), which is how Figma recolours them; VIP 4-8 carry their own exported vectors
+ * (`svgs`, assets/vip/tierSvgs.ts) because their gradients are no longer one hue. The stage art, the
+ * hue-blend overlay Figma lays over it (VIP 4, 6-8), the banner and the crest labels are baked into
+ * the tier's PNGs, since React Native has no blend modes.
  * Nothing on the server sells a tier yet, so "Become VIP" only says so.
  */
 
@@ -38,17 +43,83 @@ const INSET: Record<string, InsetIcon> = {
 type Fixed = 'car' | 'tag' | 'mystery' | 'nick';
 type Key = keyof typeof INSET | Fixed;
 
-type Cell = { icon: Key; x: number; y: number; label: string; lx: number; ly: number; disc: 'a' | 'b'; card?: Box };
+/** `outer` replaces the icon's inset when Figma nudged it away from where its disc would put it. */
+type Cell = { icon: Key; x: number; y: number; label: string; lx: number; ly: number; disc: 'a' | 'b'; outer?: Box };
+type Rect = [number, number, number, number]; // x y w h in frame points
 type Tier = {
   hue: number;
   /** How much more saturated the tier's colours are than VIP 1's muted green (1 = the same). */
   sat: number;
+  /** The tier's own icon vectors; without them the VIP 1 vectors are tinted by `hue`/`sat`. */
+  svgs?: TierSvgs;
   price: string;
   count: string;
+  /** x of the active-tab underline inside the tab strip, and its y below the strip's top (default 26). */
   underline: number;
+  underlineY?: number;
+  /** How far the tab strip is scrolled in this tier's frame (VIP 6-8 show VIP 4-8). */
+  scrollX?: number;
   art: { top: ImageSourcePropType; emblem: ImageSourcePropType; ram: ImageSourcePropType; car: ImageSourcePropType; banner: ImageSourcePropType };
+  /** Where Figma puts the emblem, the crest (`ram`) and the banner; the defaults are VIP 1-3's. */
+  emblemBox?: Rect;
+  ramBox?: Rect;
+  /** VIP 5's crest sits under the panel and the emblem; every other tier's is drawn last. */
+  ramBelow?: boolean;
+  bannerBox?: Rect;
   cells: Cell[];
 };
+
+const EMBLEM_BOX: Rect = [93, 259, 200, 200];
+const RAM_BOX: Rect = [106, 131, 178.66, 171.37];
+const BANNER_BOX: Rect = [69, 369, 253.33, 60];
+
+/** Where VIP 1 puts each inset icon's disc; the other tiers' insets move with their discs by the same amount. */
+const REF: Record<string, [number, number]> = {
+  medal: [54, 456],
+  frame: [170, 456],
+  wave: [55, 550],
+  bubble: [170, 550],
+  card: [284, 551],
+  entry: [172, 644],
+  gift: [287, 644],
+  hidden: [54, 738],
+};
+/** The fixed icons sit at the same offset from their disc in every tier: dx, dy, size. */
+const FIXED_AT: Record<Fixed, [number, number, number]> = { car: [5, 5, 39], tag: [10, 10, 29], mystery: [8, 9, 32], nick: [14, 12, 25] };
+
+/** The twelve cells VIP 4-8 list: the same icons and labels, but VIP 4's grid sits a few points off VIP 5-8's. */
+function grid(v4: boolean): Cell[] {
+  const c = (icon: Key, x: number, y: number, label: string, lx: number, ly: number, disc: 'a' | 'b', outer?: Box): Cell => ({ icon, x, y, label, lx, ly, disc, outer });
+  return v4
+    ? [
+        c('medal', 54, 456, 'Aristocracy ic...', 46, 510, 'a'),
+        c('frame', 170, 456, 'Aristocracy ic...', 162, 510, 'b'),
+        c('car', 287, 456, 'Get the car', 286, 510, 'a'),
+        c('wave', 55, 550, 'Special entry...', 47, 604, 'a'),
+        c('bubble', 170, 550, 'Colorful mess...', 162, 604, 'b'),
+        c('card', 281, 550, 'Flying comm...', 280, 604, 'a'),
+        c('tag', 58, 644, 'Exclusive gift', 50, 698, 'a'),
+        c('entry', 172, 644, 'Prevent from...', 164, 698, 'b'),
+        c('gift', 287, 644, 'Anti ban', 293, 698, 'a'),
+        c('hidden', 54, 738, 'Hidden', 59, 792, 'a'),
+        c('mystery', 173, 738, 'Mystery man..', 165, 792, 'b'),
+        c('nick', 287, 738, 'Colorful nick...', 281, 792, 'a'),
+      ]
+    : [
+        c('medal', 54, 456, 'Aristocracy ic...', 46, 510, 'a'),
+        c('frame', 171, 456, 'Aristocracy ic...', 163, 510, 'b'),
+        c('car', 290, 456, 'Get the car', 289, 510, 'a'),
+        c('wave', 55, 550, 'Special entry...', 47, 604, 'a', [65.88, 74.56, 30.31, 16.92]),
+        c('bubble', 170, 550, 'Colorful mess...', 162, 604, 'b'),
+        c('card', 284, 550, 'Flying comm...', 283, 604, 'a'),
+        c('tag', 55, 644, 'Exclusive gift', 47, 698, 'a'),
+        c('entry', 170, 644, 'Prevent from...', 162, 698, 'b'),
+        c('gift', 284, 644, 'Anti ban', 290, 698, 'a'),
+        c('hidden', 55, 738, 'Hidden', 60, 792, 'a'),
+        c('mystery', 170, 738, 'Mystery man..', 162, 792, 'b'),
+        c('nick', 284, 738, 'Colorful nick...', 278, 792, 'a'),
+      ];
+}
 
 const TIERS: Record<number, Tier> = {
   1: {
@@ -98,7 +169,7 @@ const TIERS: Record<number, Tier> = {
       { icon: 'car', x: 287, y: 456, label: 'Entry Banner', lx: 283, ly: 510, disc: 'a' },
       { icon: 'wave', x: 55, y: 550, label: 'Exclusive Mic Wave', lx: 37, ly: 604, disc: 'a' },
       { icon: 'bubble', x: 170, y: 550, label: 'Exclusive Bubble', lx: 159, ly: 604, disc: 'b' },
-      { icon: 'card', x: 281, y: 550, label: 'Profile Card', lx: 280, ly: 604, disc: 'a', card: [66.82, 18.08, 30.58, 73.19] },
+      { icon: 'card', x: 281, y: 550, label: 'Profile Card', lx: 280, ly: 604, disc: 'a', outer: [66.82, 18.08, 30.58, 73.19] },
       { icon: 'tag', x: 58, y: 644, label: 'VIP tag', lx: 65, ly: 698, disc: 'a' },
       { icon: 'entry', x: 172, y: 644, label: ' Exclusive Entry effect', lx: 146, ly: 698, disc: 'b' },
       { icon: 'gift', x: 287, y: 644, label: 'VIP gift', lx: 293, ly: 698, disc: 'a' },
@@ -125,7 +196,7 @@ const TIERS: Record<number, Tier> = {
       { icon: 'car', x: 287, y: 456, label: 'Entry Banner', lx: 286, ly: 510, disc: 'a' },
       { icon: 'wave', x: 55, y: 550, label: 'Exclusive Mic Wave', lx: 38, ly: 604, disc: 'a' },
       { icon: 'bubble', x: 170, y: 550, label: 'Exclusive Bubble', lx: 162, ly: 604, disc: 'b' },
-      { icon: 'card', x: 281, y: 550, label: 'Profile Card', lx: 284, ly: 604, disc: 'a', card: [66.82, 18.08, 30.58, 73.19] },
+      { icon: 'card', x: 281, y: 550, label: 'Profile Card', lx: 284, ly: 604, disc: 'a', outer: [66.82, 18.08, 30.58, 73.19] },
       { icon: 'tag', x: 58, y: 644, label: 'VIP tag', lx: 67, ly: 698, disc: 'a' },
       { icon: 'entry', x: 172, y: 644, label: ' Exclusive Entry effect', lx: 148, ly: 698, disc: 'b' },
       { icon: 'gift', x: 287, y: 644, label: 'VIP gift', lx: 297, ly: 698, disc: 'a' },
@@ -134,6 +205,98 @@ const TIERS: Record<number, Tier> = {
       { icon: 'nick', x: 287, y: 738, label: 'Colorful nick...', lx: 281, ly: 792, disc: 'a' },
     ],
   },
+};
+
+/** VIP 4-8 art: the stage with Figma's hue blend baked in, the emblem, the crest, the car and the banner. */
+function art(dir: 'vip4' | 'vip5' | 'vip6' | 'vip7' | 'vip8'): Tier['art'] {
+  switch (dir) {
+    case 'vip4':
+      return { top: require('../../assets/vip/t4/top-art.png'), emblem: require('../../assets/vip/t4/emblem.png'), ram: require('../../assets/vip/t4/ram.png'), car: require('../../assets/vip/t4/car-body.png'), banner: require('../../assets/vip/t4/banner.png') };
+    case 'vip5':
+      return { top: require('../../assets/vip/t5/top-art.png'), emblem: require('../../assets/vip/t5/emblem.png'), ram: require('../../assets/vip/t5/ram.png'), car: require('../../assets/vip/t5/car-body.png'), banner: require('../../assets/vip/t5/banner.png') };
+    case 'vip6':
+      return { top: require('../../assets/vip/t6/top-art.png'), emblem: require('../../assets/vip/t6/emblem.png'), ram: require('../../assets/vip/t6/ram.png'), car: require('../../assets/vip/t6/car-body.png'), banner: require('../../assets/vip/t6/banner.png') };
+    case 'vip7':
+      return { top: require('../../assets/vip/t7/top-art.png'), emblem: require('../../assets/vip/t7/emblem.png'), ram: require('../../assets/vip/t7/ram.png'), car: require('../../assets/vip/t7/car-body.png'), banner: require('../../assets/vip/t7/banner.png') };
+    case 'vip8':
+      return { top: require('../../assets/vip/t8/top-art.png'), emblem: require('../../assets/vip/t8/emblem.png'), ram: require('../../assets/vip/t8/ram.png'), car: require('../../assets/vip/t8/car-body.png'), banner: require('../../assets/vip/t8/banner.png') };
+  }
+}
+
+const BANNER_4: Rect = [75, 380, 239.75, 32];
+const BANNER_5_8: Rect = [74, 379, 242.25, 34];
+
+TIERS[4] = {
+  hue: 0,
+  sat: 1,
+  svgs: TIER_SVGS[4],
+  price: '2500000',
+  count: '(16/16)',
+  underline: 269,
+  underlineY: 27,
+  art: art('vip4'),
+  bannerBox: BANNER_4,
+  cells: grid(true),
+};
+TIERS[5] = {
+  hue: 0,
+  sat: 1,
+  svgs: TIER_SVGS[5],
+  price: '4000000',
+  count: '(16/16)',
+  underline: 347,
+  underlineY: 25,
+  art: art('vip5'),
+  emblemBox: [95, 278, 200, 200],
+  ramBox: [81, 115, 227, 197],
+  ramBelow: true,
+  bannerBox: BANNER_5_8,
+  cells: grid(false),
+};
+TIERS[6] = {
+  hue: 0,
+  sat: 1,
+  svgs: TIER_SVGS[6],
+  price: '6000000',
+  count: '(16/16)',
+  underline: 424,
+  underlineY: 25,
+  scrollX: 235,
+  art: art('vip6'),
+  emblemBox: [68, 282, 254, 254],
+  ramBox: [105, 129, 175, 175],
+  bannerBox: BANNER_5_8,
+  cells: grid(false),
+};
+TIERS[7] = {
+  hue: 0,
+  sat: 1,
+  svgs: TIER_SVGS[7],
+  price: '9000000',
+  count: '(16/16)',
+  underline: 502,
+  underlineY: 23,
+  scrollX: 234,
+  art: art('vip7'),
+  emblemBox: [81, 266, 227, 227],
+  ramBox: [109, 130, 175, 174.453],
+  bannerBox: BANNER_5_8,
+  cells: grid(false),
+};
+TIERS[8] = {
+  hue: 0,
+  sat: 1,
+  svgs: TIER_SVGS[8],
+  price: '12000000',
+  count: '(16/16)',
+  underline: 581,
+  underlineY: 25,
+  scrollX: 234,
+  art: art('vip8'),
+  emblemBox: [67, 247, 255, 255],
+  ramBox: [99, 131, 175, 172.266],
+  bannerBox: BANNER_5_8,
+  cells: grid(false),
 };
 
 const TABS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -180,24 +343,36 @@ export default function VipPrivilegesScreen() {
     color,
   });
 
+  const tabs = useRef<ScrollViewInstance>(null);
+  useEffect(() => {
+    tabs.current?.scrollTo({ x: u(TIERS[tierNo].scrollX ?? 0), animated: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tierNo]);
+
   const svg = useMemo(() => {
-    const t = (xml: string) => tint(xml, tier.hue, tier.sat);
+    const own = tier.svgs;
+    /** The tier's own vector when it has one, else VIP 1's turned to the tier's hue. */
+    const pick = (key: keyof TierSvgs, base: string) => own?.[key] ?? tint(base, tier.hue, tier.sat);
     return {
-      lip: t(vip.lip),
-      disc: { a: t(vip.discA), b: t(vip.discB) },
+      lip: pick('lip', vip.lip),
+      disc: { a: tint(vip.discA, tier.hue, tier.sat), b: tint(vip.discB, tier.hue, tier.sat) },
       back: vip.back,
-      icons: Object.fromEntries(Object.entries(INSET).map(([k, v]) => [k, t(v.xml)])) as Record<string, string>,
-      tag: t(vip.tag),
-      mystery: t(vip.mystery),
-      nick: t(vip.nick),
-      carDetail: t(vip.carDetail),
+      icons: Object.fromEntries(Object.entries(INSET).map(([k, v]) => [k, pick(k as keyof TierSvgs, v.xml)])) as Record<string, string>,
+      tag: pick('tag', vip.tag),
+      mystery: pick('mystery', vip.mystery),
+      nick: pick('nick', vip.nick),
+      carDetail: pick('carDetail', vip.carDetail),
     };
-  }, [tier.hue, tier.sat]);
+  }, [tier.svgs, tier.hue, tier.sat]);
 
   /** Figma's inset(…%) of the frame, then the svg's own overflow inset(…%) of that box. */
   const placed = (cell: Cell) => {
     const spec = INSET[cell.icon as string];
-    const [t, r, b, l] = cell.card ?? spec.outer;
+    // The icon rides on its disc: move the inset by how far this tier's disc is from VIP 1's.
+    const [rx, ry] = REF[cell.icon as string];
+    const dx = ((cell.x - rx) / FW) * 100;
+    const dy = ((cell.y - ry) / FH) * 100;
+    const [t, r, b, l] = cell.outer ?? [spec.outer[0] + dy, spec.outer[1] - dx, spec.outer[2] - dy, spec.outer[3] + dx];
     const ow = FW * (1 - (l + r) / 100);
     const oh = FH * (1 - (t + b) / 100);
     const ox = (FW * l) / 100;
@@ -206,35 +381,41 @@ export default function VipPrivilegesScreen() {
     const w = ow * (1 - (il + ir) / 100);
     const h = oh * (1 - (it + ib) / 100);
     return (
-      <View key={`i${cell.label}`} style={[box(ox, oy, ow, oh), spec.flip ? { transform: [{ scaleX: -1 }] } : null]}>
+      <View key={`i${cell.icon}`} style={[box(ox, oy, ow, oh), spec.flip ? { transform: [{ scaleX: -1 }] } : null]}>
         <SvgXml xml={svg.icons[cell.icon as string]} width={u(w)} height={u(h)} style={{ position: 'absolute', left: u((ow * il) / 100), top: u((oh * it) / 100) }} />
       </View>
     );
   };
 
   const fixed = (cell: Cell) => {
+    const at = FIXED_AT[cell.icon as Fixed];
+    const [fx, fy, size] = at ? [cell.x + at[0], cell.y + at[1], at[2]] : [0, 0, 0];
     switch (cell.icon) {
       case 'car':
         return (
-          <View key="car" style={[box(292, 461, 39, 39), { overflow: 'hidden' }]}>
+          <View key="car" style={[box(fx, fy, size, size), { overflow: 'hidden' }]}>
             <Image source={tier.art.car} resizeMode="stretch" style={{ position: 'absolute', left: u(-1.37), top: u(9.65), width: u(46.5), height: u(26.02) }} />
             <SvgXml xml={svg.carDetail} width={u(158.22)} height={u(239.14)} style={{ position: 'absolute', left: u(-79.6), top: u(0.6) }} />
           </View>
         );
       case 'tag':
-        return <SvgXml key="tag" xml={svg.tag} width={u(29)} height={u(29)} style={box(68, 654, 29, 29)} />;
+        return <SvgXml key="tag" xml={svg.tag} width={u(29)} height={u(29)} style={box(fx, fy, size, size)} />;
       case 'mystery':
         return (
-          <View key="mystery" style={[box(181, 747, 32, 32), { overflow: 'hidden' }]}>
+          <View key="mystery" style={[box(fx, fy, size, size), { overflow: 'hidden' }]}>
             <SvgXml xml={svg.mystery} width={u(112)} height={u(161.47)} style={{ position: 'absolute', left: u(-53.1), top: u(0.35) }} />
           </View>
         );
       case 'nick':
-        return <SvgXml key="nick" xml={svg.nick} width={u(25)} height={u(25)} style={box(301, 750, 25, 25)} />;
+        return <SvgXml key="nick" xml={svg.nick} width={u(25)} height={u(25)} style={box(fx, fy, size, size)} />;
       default:
         return placed(cell);
     }
   };
+
+  const emblemBox = tier.emblemBox ?? EMBLEM_BOX;
+  const ramBox = tier.ramBox ?? RAM_BOX;
+  const crest = <Image source={tier.art.ram} resizeMode="cover" style={box(...ramBox)} />;
 
   return (
     <View style={styles.screen}>
@@ -243,6 +424,9 @@ export default function VipPrivilegesScreen() {
       <ScrollView style={StyleSheet.absoluteFill} contentContainerStyle={{ height: u(FH) }} scrollEnabled={false}>
         {/* 0101 1 — the lit stage. */}
         <Image source={tier.art.top} resizeMode="cover" style={box(-1, 0, 391.14, 459.82)} />
+
+        {/* VIP 5's crest stands behind the panel; every other tier's is drawn last. */}
+        {tier.ramBelow ? crest : null}
 
         {/* Rectangle 161124085, 161124086 and the lip under the emblem. */}
         <LinearGradient
@@ -256,7 +440,7 @@ export default function VipPrivilegesScreen() {
         <View style={[box(0, 358, 389.55, 13.005), { transform: [{ rotate: '180deg' }] }]}>
           <SvgXml xml={svg.lip} width={u(499.55)} height={u(214.0)} style={{ position: 'absolute', left: u(-73), top: u(-11) }} />
         </View>
-        <Image source={tier.art.emblem} resizeMode="cover" style={box(93, 259, 200, 200)} />
+        <Image source={tier.art.emblem} resizeMode="cover" style={box(...emblemBox)} />
 
         {/* back + title */}
         <Pressable onPress={() => navigation.goBack()} hitSlop={u(10)} accessibilityLabel="Back" style={box(6, 44, 30.3, 30.3)}>
@@ -267,12 +451,12 @@ export default function VipPrivilegesScreen() {
         </Text>
 
         {/* The banner: "Aristocracy Privileges" between its wings, and the count. */}
-        <Image source={tier.art.banner} resizeMode="stretch" style={box(69, 369, 253.33, 60)} />
+        <Image source={tier.art.banner} resizeMode="stretch" style={box(...(tier.bannerBox ?? BANNER_BOX))} />
         <Text style={[box(178, 421, 60, 14), font(10, 'medium')]}>{tier.count}</Text>
 
         {/* The privilege grid. */}
         {tier.cells.map((c) => (
-          <View key={c.label}>
+          <View key={c.icon}>
             <SvgXml xml={svg.disc[c.disc]} width={u(49)} height={u(49)} style={box(c.x, c.y, 49, 49)} />
             {fixed(c)}
             <Text numberOfLines={1} style={[{ position: 'absolute', left: u(c.lx), top: u(c.ly) }, font(9, 'regular')]}>{c.label}</Text>
@@ -280,10 +464,10 @@ export default function VipPrivilegesScreen() {
         ))}
 
         {/* 024110610472026794 — the crest standing on the lip. */}
-        <Image source={tier.art.ram} resizeMode="cover" style={box(106, 131, 178.66, 171.37)} />
+        {tier.ramBelow ? null : crest}
 
         {/* VIP 1 … VIP 8, drawn last so they sit over the stage. */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={box(0, 90, 390, 30)} contentContainerStyle={{ width: u(25 + TAB_PITCH * TABS.length) }}>
+        <ScrollView ref={tabs} horizontal showsHorizontalScrollIndicator={false} style={box(0, 90, 390, 30)} contentContainerStyle={{ width: u(25 + TAB_PITCH * TABS.length) }}>
           {TABS.map((n, i) => (
             <Pressable
               key={n}
@@ -295,17 +479,17 @@ export default function VipPrivilegesScreen() {
               <Text style={[{ position: 'absolute', left: u(8), top: u(7) }, font(11, 'semiBold'), { opacity: tierNo === n ? 1 : 0.5 }]}>{`VIP ${n}`}</Text>
             </Pressable>
           ))}
-          <SvgXml xml={vip.underline} width={u(10)} height={u(2)} style={box(TIERS[tierNo].underline - 1, 26, 10, 2)} />
+          <SvgXml xml={vip.underline} width={u(10)} height={u(2)} style={box(TIERS[tierNo].underline - 1, TIERS[tierNo].underlineY ?? 26, 10, 2)} />
         </ScrollView>
       </ScrollView>
 
-      {/* Frame 1857 — price and Become VIP. */}
+      {/* Frame 1857 — price and Become VIP. Figma's numbers are from the bar's outer edge; the 1px border pushes absolute children in, so each is 1 less. */}
       <View style={[styles.bar, { height: u(61), borderTopLeftRadius: u(12), borderTopRightRadius: u(12) }]}>
-        <Image source={require('../../assets/vip/coin.png')} resizeMode="cover" style={box(12, 19, 20, 20)} />
-        <Text style={[box(46, 24, 100, 14), font(11, 'semiBold', '#FFEBB0')]}>{tier.price}</Text>
+        <Image source={require('../../assets/vip/coin.png')} resizeMode="cover" style={box(19, 20, 20, 20)} />
+        <Text style={[box(45, 23, 100, 14), font(11, 'semiBold', '#FFEBB0')]}>{tier.price}</Text>
         <Pressable
           onPress={() => Alert.alert('VIP', 'Becoming a VIP is not available yet.')}
-          style={[box(265, 14, 107, 33), { borderRadius: u(22), overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }]}
+          style={[box(264, 13, 107, 33), { borderRadius: u(22), overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }]}
         >
           <LinearGradient colors={['#FFFFFF', '#FFD557']} style={StyleSheet.absoluteFill} />
           <Text style={font(11, 'bold', '#594405')}>{`Become VIP ${tierNo}`}</Text>

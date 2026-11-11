@@ -636,7 +636,7 @@ export default function PostDetailsScreen() {
           left={17}
           top={0}
           trailing={
-            post.author?.uuid === me?.uuid || following === null || fromFollowing ? null : (
+            post.author?.uuid === me?.uuid || following === null || fromFollowing || (following === true && !followBusy) ? null : (
               <FollowChip following={following === true} busy={followBusy} onPress={toggleFollow} />
             )
           }

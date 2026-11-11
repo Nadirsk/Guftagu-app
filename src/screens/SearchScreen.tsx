@@ -1,9 +1,11 @@
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ArrowLeft, Plus } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -16,6 +18,7 @@ import { SvgXml } from 'react-native-svg';
 import { api, ApiError } from '../api/client';
 import * as icons from '../assets/home/icons';
 import { useAuth } from '../auth/AuthContext';
+import type { RootStackParamList } from '../navigation/types';
 import { useDesignScale } from '../theme/layout';
 import { colors, typography } from '../theme/tokens';
 import { LevelBadges } from './level/LevelBadge';
@@ -91,6 +94,7 @@ const D = {
 const MIN_TERM = 2;
 const DEBOUNCE_MS = 300;
 
+type SearchRoom = { uuid: string; name: string | null; cover_url: string | null; listener_count: number; owner: { display_name: string | null; avatar_url?: string | null } | null };
 type SearchUser = {
   uuid: string;
   guftagu_id: string | null;
@@ -179,11 +183,13 @@ function ResultRow({
   onToggleFollow: () => void;
 }) {
   const { px } = useDesignScale();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { row } = D;
 
   return (
     <View style={[styles.row, { height: px(row.height), width: px(D.results.width) }]}>
-      <View style={[styles.rowLeft, { gap: px(row.gap), marginRight: px(row.textGutter) }]}>
+      {/* Tapping the person opens their Profile (Figma 732:16069). */}
+      <Pressable onPress={() => navigation.navigate('UserProfile', { uuid: person.uuid })} style={[styles.rowLeft, { gap: px(row.gap), marginRight: px(row.textGutter) }]}>
         <UserAvatar source={person.avatar_url ? { uri: person.avatar_url } : avatarPlaceholder} frame={person.frame} size={px(row.avatar)} />
         <View style={{ flex: 1, gap: px(row.textGap) }}>
           <Text
@@ -205,7 +211,7 @@ function ResultRow({
             </Text>
           ) : null}
         </View>
-      </View>
+      </Pressable>
 
       <FollowButton following={following} busy={busy} onPress={onToggleFollow} />
     </View>
@@ -213,7 +219,7 @@ function ResultRow({
 }
 
 export default function SearchScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const { px } = useDesignScale();
   const { token } = useAuth();
@@ -224,6 +230,7 @@ export default function SearchScreen() {
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchUser[]>([]);
+  const [rooms, setRooms] = useState<SearchRoom[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
@@ -264,12 +271,13 @@ export default function SearchScreen() {
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const data = await api<{ users: SearchUser[] }>(
-          `/search?type=users&limit=20&q=${encodeURIComponent(term)}`,
+        const data = await api<{ users: SearchUser[]; rooms?: SearchRoom[] }>(
+          `/search?type=all&limit=20&q=${encodeURIComponent(term)}`,
           { token },
         );
         if (requestId.current !== id) return;
         setResults(data.users);
+        setRooms(data.rooms ?? []);
         // Seed from the server so someone already followed never offers Follow;
         // a local toggle made earlier in this session still wins.
         setFollowed((f) => {
@@ -406,11 +414,28 @@ export default function SearchScreen() {
             <ActivityIndicator color={colors.black} style={{ marginTop: px(24) }} />
           ) : error ? (
             <Text style={[styles.notice, { fontSize: px(15) }]}>{error}</Text>
-          ) : results.length === 0 ? (
+          ) : results.length === 0 && rooms.length === 0 ? (
             <Text style={[styles.notice, { fontSize: px(15) }]}>No one found for “{term}”.</Text>
           ) : (
             <FlatList
               data={results}
+              ListHeaderComponent={
+                rooms.length ? (
+                  <View style={{ marginBottom: px(D.results.gap) }}>
+                    <Text style={[styles.historyLabel, { position: 'relative', left: 0, top: 0, fontSize: px(16), marginBottom: px(10) }]}>Rooms</Text>
+                    {rooms.map((r) => (
+                      <Pressable key={r.uuid} onPress={() => navigation.navigate('Room', { uuid: r.uuid })} style={{ flexDirection: 'row', alignItems: 'center', gap: px(12), marginBottom: px(12) }}>
+                        <Image source={r.cover_url ?? r.owner?.avatar_url ? { uri: (r.cover_url ?? r.owner?.avatar_url) as string } : require('../assets/party/room-avatar.png')} style={{ width: px(52), height: px(52), borderRadius: px(10) }} />
+                        <View style={{ flex: 1 }}>
+                          <Text numberOfLines={1} style={[styles.notice, { fontSize: px(16), textAlign: 'left', color: '#000' }]}>{r.name ?? 'Guftagu room'}</Text>
+                          <Text numberOfLines={1} style={[styles.notice, { fontSize: px(13), textAlign: 'left' }]}>{r.owner?.display_name ?? ''} · {r.listener_count} listening</Text>
+                        </View>
+                      </Pressable>
+                    ))}
+                    {results.length ? <Text style={[styles.historyLabel, { position: 'relative', left: 0, top: 0, fontSize: px(16) }]}>People</Text> : null}
+                  </View>
+                ) : undefined
+              }
               keyExtractor={(item) => item.uuid}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}

@@ -1,14 +1,17 @@
+import { MomentCounts } from '../../components/MomentCounts';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { setStatusBarStyle } from 'expo-status-bar';
 import { ChevronRight, Play } from 'lucide-react-native';
 import { useCallback, useState } from 'react';
-import { Alert, Image, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import Svg, { Defs, LinearGradient as SvgGradient, Stop, Text as SvgText } from 'react-native-svg';
 import { SvgXml } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { api } from '../../api/client';
+import { peek, refresh } from '../../lib/swrCache';
 import * as icons from '../../assets/profile/icons';
 import { useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
@@ -58,9 +61,12 @@ export default function ProfileScreen() {
   const { px } = useDesignScale();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, token } = useAuth();
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [posts, setPosts] = useState<FeedItem[] | null>(null);
+  const statsPath = `/users/${user?.uuid}/stats`;
+  const postsPath = `/users/${user?.uuid}/posts?limit=20`;
+  // Coming back to the tab shows what was loaded last time; the requests below only refresh it.
+  const [stats, setStats] = useState<Stats | null>(() => peek<Stats>(statsPath, token));
+  const [wallet, setWallet] = useState<Wallet | null>(() => peek<Wallet>('/wallet', token));
+  const [posts, setPosts] = useState<FeedItem[] | null>(() => peek<FeedItem[]>(postsPath, token));
   const [tab, setTab] = useState<'Moment' | 'Gift'>('Moment');
   const [direction, setDirection] = useState<'received' | 'sent'>('received');
   const [gifts, setGifts] = useState<Gifts | null>(null);
@@ -70,12 +76,15 @@ export default function ProfileScreen() {
 
   const load = useCallback(() => {
     if (!user) return;
-    api<Stats>(`/users/${user.uuid}/stats`, { token }).then(setStats).catch(() => undefined);
-    api<Wallet>('/wallet', { token }).then(setWallet).catch(() => undefined);
-    api<FeedItem[]>(`/users/${user.uuid}/posts?limit=20`, { token }).then(setPosts).catch(() => setPosts([]));
+    const stops = [
+      refresh<Stats>(statsPath, token, setStats),
+      refresh<Wallet>('/wallet', token, setWallet),
+      refresh<FeedItem[]>(postsPath, token, setPosts, undefined, () => setPosts((p) => p ?? [])),
+    ];
     // Reloaded on every visit, so a frame put on or taken off in the Item Bag shows here.
     fetchOwned(token).then(setOwned).catch(() => undefined);
-  }, [token, user]);
+    return () => stops.forEach((s) => s());
+  }, [token, user, statsPath, postsPath]);
 
   useFocusEffect(
     useCallback(() => {
@@ -87,8 +96,10 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!user || tab !== 'Gift') return;
-      setGifts(null);
-      api<Gifts>(`/users/${user.uuid}/gifts?direction=${direction}`, { token }).then(setGifts).catch(() => setGifts({ earned: 0, spent: 0, items: [] }));
+      const path = `/users/${user.uuid}/gifts?direction=${direction}`;
+      // Sent / Received each remember their own list, so flipping back to one is instant.
+      setGifts(peek<Gifts>(path, token));
+      return refresh<Gifts>(path, token, setGifts, undefined, () => setGifts((g) => g ?? { earned: 0, spent: 0, items: [] }));
     }, [direction, tab, token, user]),
   );
 
@@ -369,16 +380,7 @@ export default function ProfileScreen() {
           <Text style={[styles.regular, { fontSize: px(12), color: 'rgba(0,0,0,0.3)' }]}>{date}</Text>
           <Text style={[styles.regular, { fontSize: px(12), color: 'rgba(0,0,0,0.3)' }]}>{`${time}${user?.country ? ` - ${user.country}` : ''}`}</Text>
         </View>
-        <View style={{ position: 'absolute', left: px(271), top: px(top + 213), flexDirection: 'row', alignItems: 'center', gap: px(17) }}>
-          <Pressable onPress={onOpen} style={{ flexDirection: 'row', alignItems: 'center', gap: px(5) }}>
-            <SvgXml xml={icons.chatDots} width={px(24)} height={px(24)} />
-            <Text style={[styles.regular, { fontSize: px(12), color: '#8E8E93' }]}>{post.comment_count ?? 0}</Text>
-          </Pressable>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(5) }}>
-            <SvgXml xml={icons.thumbsUp} width={px(24)} height={px(24)} />
-            <Text style={[styles.regular, { fontSize: px(12), color: '#8E8E93' }]}>{post.like_count ?? 0}</Text>
-          </View>
-        </View>
+        <MomentCounts style={{ position: 'absolute', left: px(262), top: px(top + 211) }} likes={post.like_count ?? 0} comments={post.comment_count ?? 0} onComment={onOpen} />
       </>
     );
   }

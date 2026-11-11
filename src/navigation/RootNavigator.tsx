@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
+import { AlertHost } from '../components/AppAlert';
 import EmailAuthScreen from '../screens/EmailAuthScreen';
 import HomeScreen from '../screens/HomeScreen';
 import LevelScreen from '../screens/level/LevelScreen';
@@ -39,7 +40,16 @@ import InviteRewardScreen from '../screens/invite/InviteRewardScreen';
 import VipPrivilegesScreen from '../screens/vip/VipPrivilegesScreen';
 import WalletScreen from '../screens/wallet/WalletScreen';
 import CoinsHistoryScreen from '../screens/wallet/CoinsHistoryScreen';
+import CreateVideoScreen from '../screens/liveVideo/CreateVideoScreen';
+import LiveVideoEndedScreen from '../screens/liveVideo/LiveVideoEndedScreen';
+import LiveVideoRoomScreen from '../screens/liveVideo/LiveVideoRoomScreen';
+import UserProfileScreen from '../screens/profile/UserProfileScreen';
 import ExchangeScreen from '../screens/wallet/ExchangeScreen';
+import TransferScreen from '../screens/wallet/TransferScreen';
+import WithdrawMethodFormScreen from '../screens/wallet/WithdrawMethodFormScreen';
+import WithdrawMethodListScreen from '../screens/wallet/WithdrawMethodListScreen';
+import WithdrawMethodScreen from '../screens/wallet/WithdrawMethodScreen';
+import WithdrawScreen from '../screens/wallet/WithdrawScreen';
 import StoreScreen from '../screens/store/StoreScreen';
 import StoreSendScreen from '../screens/store/StoreSendScreen';
 import WeeklyStarScreen from '../screens/weeklyStar/WeeklyStarScreen';
@@ -114,6 +124,15 @@ export default function RootNavigator() {
             <Stack.Screen name="Wallet" component={WalletScreen} />
             <Stack.Screen name="CoinsHistory" component={CoinsHistoryScreen} />
             <Stack.Screen name="Exchange" component={ExchangeScreen} />
+            <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+            <Stack.Screen name="CreateVideo" component={CreateVideoScreen} />
+            <Stack.Screen name="LiveVideoRoom" component={LiveVideoRoomScreen} options={{ gestureEnabled: false }} />
+            <Stack.Screen name="LiveVideoEnded" component={LiveVideoEndedScreen} options={{ gestureEnabled: false }} />
+            <Stack.Screen name="Withdraw" component={WithdrawScreen} />
+            <Stack.Screen name="WithdrawMethod" component={WithdrawMethodScreen} />
+            <Stack.Screen name="WithdrawMethodList" component={WithdrawMethodListScreen} />
+            <Stack.Screen name="WithdrawMethodForm" component={WithdrawMethodFormScreen} />
+            <Stack.Screen name="Transfer" component={TransferScreen} />
             <Stack.Screen name="Medals" component={MedalsScreen} />
             <Stack.Screen name="CpRanking" component={CpRankingScreen} />
             <Stack.Screen name="VipPrivileges" component={VipPrivilegesScreen} />
@@ -148,6 +167,8 @@ export default function RootNavigator() {
       {/* Inside the container, over every screen: the room you minimised. */}
       <MiniRoomPill />
     </NavigationContainer>
+    {/* The app's own dialogs (replaces the grey system Alert). */}
+    <AlertHost />
     </RoomSessionProvider>
   );
 }

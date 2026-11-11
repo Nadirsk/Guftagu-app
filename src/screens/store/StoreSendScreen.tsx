@@ -2,7 +2,8 @@ import { type RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { setStatusBarStyle } from 'expo-status-bar';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 
 import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';

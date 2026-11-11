@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
-import { api, ApiError } from '../../api/client';
+import { peek, refresh } from '../../lib/swrCache';
 import * as icons from '../../assets/level/icons';
 import { useAuth } from '../../auth/AuthContext';
 import { type Box, Img, Label, useBox } from '../../components/figmaLayers';
@@ -50,7 +50,7 @@ export default function LevelScreen() {
   const { token, user } = useAuth();
   const initial = useRoute<RouteProp<RootStackParamList, 'Level'>>().params?.kind ?? 'wealth';
   const [kind, setKind] = useState<LevelKind>(initial);
-  const [progression, setProgression] = useState<Progression | null>(null);
+  const [progression, setProgression] = useState<Progression | null>(() => peek<Progression>('/progression', token));
 
   useFocusEffect(
     useCallback(() => {
@@ -60,15 +60,7 @@ export default function LevelScreen() {
   );
 
   useEffect(() => {
-    let live = true;
-    api<Progression>('/progression', { token })
-      .then((data) => live && setProgression(data))
-      .catch((e) => {
-        if (!(e instanceof ApiError)) throw e;
-      });
-    return () => {
-      live = false;
-    };
+    return refresh<Progression>('/progression', token, setProgression);
   }, [token]);
 
   const T = THEME[kind];

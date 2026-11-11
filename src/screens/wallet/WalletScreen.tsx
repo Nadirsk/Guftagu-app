@@ -1,10 +1,12 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import { SvgXml } from 'react-native-svg';
 
 import { api, ApiError } from '../../api/client';
+import { peek, refresh } from '../../lib/swrCache';
 import * as settingsIcons from '../../assets/settings/icons';
 import * as icons from '../../assets/wallet/icons';
 import { useAuth } from '../../auth/AuthContext';
@@ -14,7 +16,8 @@ import { colors, typography } from '../../theme/tokens';
 
 /**
  * Wallet — the Coin tab (188:966, with Google pay opened: 200:4721 and its buy dialog
- * 200:4892) and the Diamonds tab (Points, 204:5038). `GET /wallet` supplies the balances.
+ * 200:4892) and the Diamonds tab (Points, 204:5038; with Transfer, 794:7841). Withdraw, Exchange and
+ * Transfer each open their own page. `GET /wallet` supplies the balances.
  * The coin packs come from `GET /recharge-packages` and Confirm credits them through
  * `POST /recharge-packages/{id}/purchase` (no payment gateway yet); the diamond packs
  * are still the design's own.
@@ -67,23 +70,20 @@ export default function WalletScreen() {
   const { token } = useAuth();
   const route = useRoute<RouteProp<RootStackParamList, 'Wallet'>>();
   const [tab, setTab] = useState<'coin' | 'diamonds'>(route.params?.tab ?? 'coin');
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [gpayOpen, setGpayOpen] = useState(true);
-  const [packs, setPacks] = useState<Pack[]>([]);
+  const [wallet, setWallet] = useState<Wallet | null>(() => peek<Wallet>('/wallet', token));
+  // Google pay and USDT each open the same coin packs (one at a time); Visa has none yet.
+  const [openMethod, setOpenMethod] = useState<'gpay' | 'usdt' | null>('gpay');
+  const gpayOpen = openMethod !== null; // some method's packs are showing — the page geometry below follows it
+  const [packs, setPacks] = useState<Pack[]>(() => peek<Pack[]>('/recharge-packages', token) ?? []);
   const [buying, setBuying] = useState<Pack | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    let live = true;
-    api<Wallet>('/wallet', { token })
-      .then((data) => live && setWallet(data))
-      .catch(() => undefined);
-    api<Pack[]>('/recharge-packages', { token })
-      .then((rows) => live && setPacks(Array.isArray(rows) ? rows : []))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
+    const stops = [
+      refresh<Wallet>('/wallet', token, setWallet),
+      refresh<Pack[]>('/recharge-packages', token, (rows) => setPacks(Array.isArray(rows) ? rows : [])),
+    ];
+    return () => stops.forEach((s) => s());
   }, [token]);
 
   // A first-recharge pack goes once the account has bought coins.
@@ -132,7 +132,7 @@ export default function WalletScreen() {
       <Pressable onPress={() => setTab('diamonds')} style={[at(282.5 - 60, 92), { width: px(120), alignItems: 'center' }]}>
         <Text numberOfLines={1} style={[text(18, 'regular'), { textAlign: 'center', opacity: tab === 'diamonds' ? 1 : 0.4 }]}>Diamonds</Text>
       </Pressable>
-      <Pressable onPress={() => navigation.navigate('CoinsHistory')} hitSlop={px(10)} accessibilityLabel="History" style={[at(362, 91), { width: px(24), height: px(24) }]}>
+      <Pressable onPress={() => navigation.navigate('CoinsHistory', { currency: tab === 'coin' ? 'coin' : 'diamond' })} hitSlop={px(10)} accessibilityLabel="History" style={[at(362, 91), { width: px(24), height: px(24) }]}>
         <SvgXml xml={icons.clockFading} width={px(24)} height={px(24)} />
       </Pressable>
     </>
@@ -184,39 +184,42 @@ export default function WalletScreen() {
         <SvgXml xml={icons.chevronDown} width={px(6.0946)} height={px(11.5)} style={{ position: 'absolute', left: px(93 - 3.0473), top: px(17 - 5.75), transform: [{ rotate: '90deg' }] }} />
       </View>
 
-      {/* Frame 1597881281 — Google pay (opens the packs), USDT, Visa. */}
+      {/* Frame 1597881281 — Google pay and USDT (each opens the packs), Visa. */}
       <View style={[at(16, 415), { width: px(370), gap: px(14) }]}>
-        <View style={[styles.row, { height: px(gpayOpen ? cardHeight : 65), borderRadius: px(9), borderColor: 'rgba(0,0,0,0.2)' }]}>
-          <Pressable onPress={() => setGpayOpen((o) => !o)} style={{ position: 'absolute', left: 0, top: 0, width: px(368), height: px(63) }}>
-            <Image source={art.gpay} style={{ position: 'absolute', left: px(17), top: px(15), width: px(31), height: px(31) }} />
-            <Text style={[at(59, 20.5), text(16)]}>Google pay</Text>
-            <SvgXml
-              xml={settingsIcons.chevronForward}
-              width={px(24)}
-              height={px(24)}
-              style={{ position: 'absolute', left: px(333), top: px(gpayOpen ? 15.5 : 20), transform: gpayOpen ? [{ rotate: '90deg' }] : [] }}
-            />
-          </Pressable>
-          {gpayOpen &&
-            Array.from({ length: packRows }, (_, r) => (
-              <View key={r} style={[at(17, 71 + r * 156), { flexDirection: 'row', gap: px(17) }]}>
-                {shownPacks.slice(r * 3, r * 3 + 3).map((p, i) => pack(p, i))}
-              </View>
-            ))}
-        </View>
-        {(['usdt', 'cards'] as const).map((key) => (
-          <Pressable key={key} style={[styles.row, { height: px(65), borderRadius: px(9), borderColor: 'rgba(0,0,0,0.2)' }]}>
-            {key === 'usdt' ? (
-              <Image source={art.usdt} style={{ position: 'absolute', left: px(16), top: px(16), width: px(35), height: px(35) }} />
-            ) : (
-              <View style={{ position: 'absolute', left: px(16), top: px(21), width: px(52.174), height: px(25), overflow: 'hidden' }}>
-                <Image source={art.cards} resizeMode="stretch" style={{ position: 'absolute', left: 0, top: px(-0.602 * 25), width: px(52.174), height: px(25 * 2.2475) }} />
-              </View>
-            )}
-            <Text style={[at(key === 'usdt' ? 60 : 75, 22), text(16)]}>{key === 'usdt' ? 'USDT- TRX' : 'Visa /Master'}</Text>
-            <SvgXml xml={settingsIcons.chevronForward} width={px(24)} height={px(24)} style={{ position: 'absolute', left: px(333), top: px(21) }} />
-          </Pressable>
-        ))}
+        {(['gpay', 'usdt'] as const).map((key) => {
+          const open = openMethod === key;
+          return (
+            <View key={key} style={[styles.row, { height: px(open ? cardHeight : 65), borderRadius: px(9), borderColor: 'rgba(0,0,0,0.2)' }]}>
+              <Pressable onPress={() => setOpenMethod(open ? null : key)} style={{ position: 'absolute', left: 0, top: 0, width: px(368), height: px(63) }}>
+                {key === 'gpay' ? (
+                  <Image source={art.gpay} style={{ position: 'absolute', left: px(17), top: px(15), width: px(31), height: px(31) }} />
+                ) : (
+                  <Image source={art.usdt} style={{ position: 'absolute', left: px(16), top: px(16), width: px(35), height: px(35) }} />
+                )}
+                <Text style={[at(key === 'gpay' ? 59 : 60, key === 'gpay' ? 20.5 : 22), text(16)]}>{key === 'gpay' ? 'Google pay' : 'USDT- TRX'}</Text>
+                <SvgXml
+                  xml={settingsIcons.chevronForward}
+                  width={px(24)}
+                  height={px(24)}
+                  style={{ position: 'absolute', left: px(333), top: px(open ? 15.5 : 20), transform: open ? [{ rotate: '90deg' }] : [] }}
+                />
+              </Pressable>
+              {open &&
+                Array.from({ length: packRows }, (_, r) => (
+                  <View key={r} style={[at(17, 71 + r * 156), { flexDirection: 'row', gap: px(17) }]}>
+                    {shownPacks.slice(r * 3, r * 3 + 3).map((p, i) => pack(p, i))}
+                  </View>
+                ))}
+            </View>
+          );
+        })}
+        <Pressable style={[styles.row, { height: px(65), borderRadius: px(9), borderColor: 'rgba(0,0,0,0.2)' }]}>
+          <View style={{ position: 'absolute', left: px(16), top: px(21), width: px(52.174), height: px(25), overflow: 'hidden' }}>
+            <Image source={art.cards} resizeMode="stretch" style={{ position: 'absolute', left: 0, top: px(-0.602 * 25), width: px(52.174), height: px(25 * 2.2475) }} />
+          </View>
+          <Text style={[at(75, 22), text(16)]}>Visa /Master</Text>
+          <SvgXml xml={settingsIcons.chevronForward} width={px(24)} height={px(24)} style={{ position: 'absolute', left: px(333), top: px(21) }} />
+        </Pressable>
       </View>
 
       <Text style={[at(16, resellersTop), text(16)]}>Resellers</Text>
@@ -239,11 +242,11 @@ export default function WalletScreen() {
   );
 
   // Points (204:5038): the Diamonds tab.
-  const actionCard = (left: number, label: string, onPress: () => void, picture: React.ReactNode) => (
+  const actionCard = (left: number, label: string, onPress: () => void, picture: React.ReactNode, top = 357) => (
     <Pressable
       onPress={onPress}
       style={[
-        at(left, 357),
+        at(left, top),
         styles.actionCard,
         { width: px(166), height: px(184), borderRadius: px(13), shadowOffset: { width: px(5), height: px(5) }, shadowRadius: px(9.8) },
       ]}
@@ -269,8 +272,16 @@ export default function WalletScreen() {
       {actionCard(
         16,
         'Withdraw',
-        () => Alert.alert('Withdraw', 'Withdrawals open from the next update.'),
+        () => navigation.navigate('Withdraw'),
         <Image source={art.withdraw} resizeMode="cover" style={{ width: px(83), height: px(119) }} />,
+      )}
+      {/* Transfer (794:7865): the same picture as Withdraw, under it. */}
+      {actionCard(
+        16,
+        'Transfer',
+        () => navigation.navigate('Transfer'),
+        <Image source={art.withdraw} resizeMode="cover" style={{ width: px(83), height: px(119) }} />,
+        554,
       )}
       {actionCard(
         192,

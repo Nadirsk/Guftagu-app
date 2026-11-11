@@ -18,6 +18,7 @@ import {
 import Svg, { Rect, SvgXml } from 'react-native-svg';
 
 import { api, ApiError, uploadFile } from '../../api/client';
+import { peek, refresh } from '../../lib/swrCache';
 import * as icons from '../../assets/room/icons';
 import { useAuth } from '../../auth/AuthContext';
 import type { RootStackParamList } from '../../navigation/types';
@@ -77,7 +78,7 @@ export default function CreateRoomScreen() {
   const [cover, setCover] = useState<Picked | null>(null);
   const [title, setTitle] = useState('');
   const [announcement, setAnnouncement] = useState('');
-  const [templates, setTemplates] = useState<Template[] | null>(null);
+  const [templates, setTemplates] = useState<Template[] | null>(() => peek<Template[]>('/room-seat-templates', token));
   const [templateId, setTemplateId] = useState<number | null>(null);
   const [locked, setLocked] = useState(false);
   const [password, setPassword] = useState('');
@@ -89,8 +90,12 @@ export default function CreateRoomScreen() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Themes are not cached here: Room Settings caches the same path already filtered.
     api<Theme[]>('/room-themes', { token }).then(setThemes).catch(() => undefined);
-    api<Template[]>('/room-seat-templates', { token }).then(setTemplates).catch(() => setTemplates([]));
+    const stops = [
+      refresh<Template[]>('/room-seat-templates', token, setTemplates, undefined, () => setTemplates((t) => t ?? [])),
+    ];
+    return () => stops.forEach((s) => s());
   }, [token]);
 
   // Two cards to a row; a row is as tall as its taller card.

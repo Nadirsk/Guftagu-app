@@ -2,7 +2,8 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { setStatusBarStyle } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import { SvgXml } from 'react-native-svg';
 
 import { api, ApiError } from '../../api/client';
@@ -19,9 +20,9 @@ import DailyRewards, { type CheckinDay } from './DailyRewards';
 import FamilyBody from './FamilyBody';
 import { useHomeBoards } from './boards';
 import { FeedPlaceholder, PostCard, useFeed, useFollow } from './feed';
-import { ADD_FAB, LIVE_CARD, POST } from './geometry';
+import { ADD_FAB, POST } from './geometry';
 import { HomeHeader, TabRow, type TabName } from './header';
-import HeroCard from './HeroCard';
+import LiveBody from './LiveBody';
 
 /**
  * The dark home — section 483:3248. One screen, four tabs: they share the header
@@ -153,11 +154,7 @@ export default function HomeFeedScreen({ onOpenExplore }: { onOpenExplore?: () =
   if (tab === 'Family') {
     body = <FamilyBody top={POST.y} />;
   } else if (tab === 'Live') {
-    body = (
-      <View style={{ height: px(LIVE_CARD.y - POST.y + LIVE_CARD.height) }}>
-        <HeroCard originY={POST.y} onPress={fullAccess ? onOpenExplore : undefined} />
-      </View>
-    );
+    body = <LiveBody originY={POST.y} interactive={fullAccess} onOpenExplore={onOpenExplore} />;
   } else if (feed && feed.posts.length > 0) {
     const isForYou = tab === 'For You';
     body = (
@@ -169,7 +166,8 @@ export default function HomeFeedScreen({ onOpenExplore }: { onOpenExplore?: () =
               key={post.uuid}
               post={post}
               // Everyone in Following is followed already — that is the difference.
-              showFollow={isForYou}
+              // The chip shows "Following" only while the request is in flight, then goes away.
+              showFollow={isForYou && !(author && follow.followed[author.uuid] && !follow.busy[author.uuid])}
               following={author ? follow.followed[author.uuid] ?? false : false}
               followBusy={author ? follow.busy[author.uuid] ?? false : false}
               onToggleFollow={() => {

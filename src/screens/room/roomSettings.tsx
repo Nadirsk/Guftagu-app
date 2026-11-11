@@ -3,6 +3,7 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View
 import { SvgXml } from 'react-native-svg';
 
 import { api } from '../../api/client';
+import { peek, refresh } from '../../lib/swrCache';
 import * as icons from '../../assets/room/icons';
 import { useAuth } from '../../auth/AuthContext';
 import { useDesignScale } from '../../theme/layout';
@@ -99,12 +100,12 @@ function ModeCard({ template, on, onPress }: { template: SeatTemplate; on: boole
 export function RoomModeSheet({ extra, current, busy, onPick, onClose }: { extra: number; current: number | null | undefined; busy: boolean; onPick: (t: SeatTemplate) => void; onClose: () => void }) {
   const { px } = useDesignScale();
   const { token } = useAuth();
-  const [templates, setTemplates] = useState<SeatTemplate[] | null>(null);
-  useEffect(() => {
-    api<SeatTemplate[]>('/room-seat-templates', { token })
-      .then((t) => setTemplates([...(t ?? [])].sort((a, b) => a.total_seats - b.total_seats)))
-      .catch(() => setTemplates([]));
-  }, [token]);
+  const [templates, setTemplates] = useState<SeatTemplate[] | null>(() => peek<SeatTemplate[]>('/room-seat-templates', token, (t) => [...(t ?? [])].sort((a, b) => a.total_seats - b.total_seats)));
+  useEffect(
+    () =>
+      refresh<SeatTemplate[]>('/room-seat-templates', token, setTemplates, (t) => [...(t ?? [])].sort((a, b) => a.total_seats - b.total_seats), () => setTemplates((t) => t ?? [])),
+    [token],
+  );
 
   const G = ROOM_MODE.grid;
   return (
@@ -152,19 +153,20 @@ export function RoomThemeSheet({
 }) {
   const { px } = useDesignScale();
   const { token } = useAuth();
-  const [themes, setThemes] = useState<RoomThemeItem[] | null>(null);
+  const [themes, setThemes] = useState<RoomThemeItem[] | null>(() => peek<RoomThemeItem[], RoomThemeItem[]>('/room-themes', token, (t) => (t ?? []).filter((x) => x.preview_url || x.background_url)));
   // Room Backgrounds bought in the Store sit in the Item Bag; the host can put one behind the room.
-  const [owned, setOwned] = useState<{ id: number; name: string; image_url: string | null }[]>([]);
-  useEffect(() => {
-    api<{ id: number; type: string; name: string; image_url: string | null }[]>('/store/items/mine', { token })
-      .then((rows) => setOwned((rows ?? []).filter((r) => r.type === 'room_background' && r.image_url)))
-      .catch(() => setOwned([]));
-  }, [token]);
-  useEffect(() => {
-    api<RoomThemeItem[]>('/room-themes', { token })
-      .then((t) => setThemes((t ?? []).filter((x) => x.preview_url || x.background_url)))
-      .catch(() => setThemes([]));
-  }, [token]);
+  type OwnedBg = { id: number; name: string; image_url: string | null };
+  const [owned, setOwned] = useState<OwnedBg[]>(() => peek<(OwnedBg & { type: string })[], OwnedBg[]>('/store/items/mine', token, (rows) => (rows ?? []).filter((r) => r.type === 'room_background' && r.image_url)) ?? []);
+  useEffect(
+    () =>
+      refresh<(OwnedBg & { type: string })[], OwnedBg[]>('/store/items/mine', token, setOwned, (rows) => (rows ?? []).filter((r) => r.type === 'room_background' && r.image_url)),
+    [token],
+  );
+  useEffect(
+    () =>
+      refresh<RoomThemeItem[]>('/room-themes', token, setThemes, (t) => (t ?? []).filter((x) => x.preview_url || x.background_url), () => setThemes((t) => t ?? [])),
+    [token],
+  );
 
   const T = ROOM_THEME;
   // The theme in use is the one whose picture is showing — an upload replaces any theme.

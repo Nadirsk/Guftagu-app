@@ -134,6 +134,13 @@ export type GiftEvent = {
  * `room.{uuid}` presence channel, but the app has no websocket client yet, so
  * for now the screen polls — seats and chat are a few seconds behind.
  */
+export type RoomEnvelope = { uuid: string; sender: RoomUser; total_coins: number; total_count: number; remaining_count: number };
+export type EnvelopeClaimResult = {
+  amount: number;
+  envelope: RoomEnvelope;
+  claims: { user: RoomUser; amount: number; at: string | null }[];
+};
+
 const STATE_EVERY = 4000;
 const CHAT_EVERY = 3000;
 const GIFTS_EVERY = 6000;
@@ -149,6 +156,8 @@ export function useRoom(uuid: string) {
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [gifts, setGifts] = useState<GiftEvent[]>([]);
+  // Red packets still open in this room that this person has not opened yet (server-backed).
+  const [envelopes, setEnvelopes] = useState<RoomEnvelope[]>([]);
   /** Set when joining fails for good — a closed room, a kick, a wrong password. */
   const [fatal, setFatal] = useState<string | null>(null);
   const [active, setActive] = useState(AppState.currentState === 'active');
@@ -183,6 +192,14 @@ export function useRoom(uuid: string) {
       });
     } catch {
       // Keep what is on screen; the next tick tries again.
+    }
+  }, [path, token]);
+
+  const refreshEnvelopes = useCallback(async () => {
+    try {
+      setEnvelopes(await api<RoomEnvelope[]>(`${path}/envelopes`, { token }));
+    } catch {
+      // Keep what is shown; the next tick tries again.
     }
   }, [path, token]);
 
@@ -245,10 +262,13 @@ export function useRoom(uuid: string) {
     if (!active || !snapshot) return;
     refreshChat();
     refreshGifts();
+    refreshEnvelopes();
     const s = setInterval(refreshState, STATE_EVERY);
     const c = setInterval(refreshChat, CHAT_EVERY);
     const g = setInterval(refreshGifts, GIFTS_EVERY);
+    const e = setInterval(refreshEnvelopes, GIFTS_EVERY * 2);
     return () => {
+      clearInterval(e);
       clearInterval(s);
       clearInterval(c);
       clearInterval(g);
@@ -308,6 +328,13 @@ export function useRoom(uuid: string) {
     // The host changed Room Mode (everyone stood up, seats re-laid) or Room Theme
     // (background only): re-read the room now rather than at the next poll.
     channel.listen('.room.updated', () => refreshStateRef.current());
+    // Red packets: a new one appears for everyone; each opening counts it down, and at zero it is gone.
+    channel.listen('.envelope.created', (e: { envelope: RoomEnvelope }) => {
+      setEnvelopes((prev) => (prev.some((x) => x.uuid === e.envelope.uuid) ? prev : [...prev, e.envelope]));
+    });
+    channel.listen('.envelope.claimed', (e: { envelope_uuid: string; remaining_count: number }) => {
+      setEnvelopes((prev) => prev.flatMap((x) => (x.uuid !== e.envelope_uuid ? [x] : e.remaining_count > 0 ? [{ ...x, remaining_count: e.remaining_count }] : [])));
+    });
     channel.listen('.member.left', (e: { listener_count: number }) => {
       setSnapshot((prev) => (prev ? { ...prev, room: { ...prev.room, listener_count: e.listener_count } } : prev));
     });
@@ -332,9 +359,15 @@ export function useRoom(uuid: string) {
   /** Every action answers with a fresh snapshot or nothing; either way, re-read. */
   const act = useCallback(
     async (p: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown) => {
-      const res = await api<RoomSnapshot | null>(`${path}${p}`, { method, body, token });
-      if (res && typeof res === 'object' && 'seats' in res) setSnapshot(res);
-      else refreshState();
+      try {
+        const res = await api<RoomSnapshot | null>(`${path}${p}`, { method, body, token });
+        if (res && typeof res === 'object' && 'seats' in res) setSnapshot(res);
+        else refreshState();
+      } catch (e) {
+        // The host kicked you out (or you were dropped): say so and leave instead of a dead room.
+        if (e instanceof ApiError && e.code === 'NOT_A_MEMBER') setFatal('You are no longer in this room — the host may have removed you.');
+        throw e;
+      }
     },
     [path, refreshState, token],
   );
@@ -358,6 +391,7 @@ export function useRoom(uuid: string) {
         });
       } catch (e) {
         setMessages((prev) => prev.filter((m) => m.uuid !== tempId));
+        if (e instanceof ApiError && e.code === 'NOT_A_MEMBER') setFatal('You are no longer in this room — the host may have removed you.');
         throw e;
       }
     },
@@ -382,6 +416,32 @@ export function useRoom(uuid: string) {
       return res;
     },
     [path, refreshGifts, refreshState, token],
+  );
+
+  const sendEnvelope = useCallback(
+    async (coins: number, count: number) => {
+      const made = await api<RoomEnvelope>(`${path}/envelopes`, { method: 'POST', body: { coins, count }, token });
+      setEnvelopes((prev) => (prev.some((x) => x.uuid === made.uuid) ? prev : [...prev, made]));
+      return made;
+    },
+    [path, token],
+  );
+
+  /** Opens one: the coins land in the wallet in the same step. Rejections mean it is empty or already yours. */
+  const claimEnvelope = useCallback(
+    async (uuid: string) => {
+      try {
+        const res = await api<EnvelopeClaimResult>(`${path}/envelopes/${uuid}/claim`, { method: 'POST', token });
+        setEnvelopes((prev) => prev.filter((x) => x.uuid !== uuid));
+        return res;
+      } catch (e) {
+        if (e instanceof ApiError && (e.code === 'ENVELOPE_EMPTY' || e.code === 'ALREADY_CLAIMED' || e.code === 'NOT_FOUND' || e.code === 'OWN_ENVELOPE')) {
+          setEnvelopes((prev) => prev.filter((x) => x.uuid !== uuid));
+        }
+        throw e;
+      }
+    },
+    [path, token],
   );
 
   const clearChat = useCallback(() => {
@@ -410,6 +470,8 @@ export function useRoom(uuid: string) {
     setMic: (muted: boolean) => act('/mic', 'PATCH', { muted }),
     muteSeat: (seat: number, muted: boolean) => act(`/seats/${seat}/mute`, 'POST', { muted }),
     lockSeat: (seat: number, locked: boolean) => act(`/seats/${seat}/lock`, 'PATCH', { locked }),
+    /** Host: stand somebody up from their mic (they stay in the room). */
+    removeFromSeat: (seat: number) => act(`/seats/${seat}/remove`, 'POST'),
     kick: (userUuid: string, minutes: number) => act(`/members/${userUuid}/kick`, 'POST', { minutes }),
     leave: () => api(`${path}/leave`, { method: 'POST', token }),
     /** Room Mode: another seat template; every seat is emptied. */
@@ -418,6 +480,9 @@ export function useRoom(uuid: string) {
     changeTheme: (pick: { theme_id: number } | { background_url: string }) => act('/theme', 'PATCH', pick),
     sendMessage,
     sendGift,
+    envelopes,
+    sendEnvelope,
+    claimEnvelope,
     clearChat,
   };
 }

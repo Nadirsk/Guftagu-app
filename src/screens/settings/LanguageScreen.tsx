@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, DevSettings, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, DevSettings, Pressable, Text, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';

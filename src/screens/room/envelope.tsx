@@ -1,43 +1,28 @@
-import { useEffect, useState } from 'react';
-import { Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type StyleProp, type TextStyle } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Image, Keyboard, Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type TextStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SvgXml } from 'react-native-svg';
 
+import { ApiError } from '../../api/client';
 import * as icons from '../../assets/room/envelope/icons';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
 import { ENVELOPE } from './geometry';
 import { avatarOf } from './sheets';
-import type { RoomUser } from './useRoom';
+import type { EnvelopeClaimResult, RoomEnvelope } from './useRoom';
 
 /**
  * Red envelopes — section 575:2742. Tools → Red Packet opens the send sheet;
- * Send leaves an envelope in the room; tapping it opens it, and opening shows
- * what you got and who else claimed.
- *
- * Nothing on the server knows about envelopes yet, so an envelope lives in the
- * room screen only: no coins leave or reach a wallet, and the split is made here.
+ * Send drops an envelope in the middle of the room for everyone except the
+ * sender. Each person opens their own and sees only their own share.
  */
-
-export type EnvelopeClaim = { user: RoomUser; amount: number; at: Date };
-export type RedEnvelope = { id: string; sender: RoomUser; gold: number; count: number; claims: EnvelopeClaim[] };
 
 const art = {
   sheetBg: require('../../assets/room/envelope/sheet-bg.png'),
   titlePill: require('../../assets/room/envelope/title-pill.png'),
   popupBg: require('../../assets/room/envelope/popup-bg.png'),
-  claimedBg: require('../../assets/room/envelope/result-bg.png'),
   coin: require('../../assets/room/envelope/coin.png'),
 };
-
-/** One envelope's share: random, at least 1 coin each, and the last one takes what is left. */
-export function claimShare(env: RedEnvelope) {
-  const left = env.count - env.claims.length;
-  const remaining = env.gold - env.claims.reduce((sum, c) => sum + c.amount, 0);
-  if (left <= 1) return remaining;
-  const max = remaining - (left - 1);
-  return Math.min(max, Math.max(1, Math.round(Math.random() * ((2 * remaining) / left))));
-}
 
 /** A label centred on a Figma point; Poppins' "normal" line is 1.5x its size. */
 function Centered({ cx, cy, size, width, style, children }: { cx: number; cy: number; size: number; width: number; style: StyleProp<TextStyle>; children: React.ReactNode }) {
@@ -57,7 +42,7 @@ function Centered({ cx, cy, size, width, style, children }: { cx: number; cy: nu
 type Pick = { preset: number | null; custom: string };
 const valueOf = (p: Pick) => (p.custom ? Number(p.custom) : p.preset ?? 0);
 
-export function EnvelopeSheet({ extra, onClose, onSend }: { extra: number; onClose: () => void; onSend: (gold: number, count: number) => void }) {
+export function EnvelopeSheet({ extra, onClose, onSend }: { extra: number; onClose: () => void; onSend: (gold: number, count: number) => void | Promise<void> }) {
   const { px } = useDesignScale();
   const S = ENVELOPE.sheet;
   const [gold, setGold] = useState<Pick>({ preset: ENVELOPE.goldChips[0].value, custom: '' });
@@ -224,130 +209,219 @@ function RulesPanel() {
 
 // ---------------------------------------------------------------- 575:2854
 
-export function EnvelopeTile({ extra, onPress }: { extra: number; onPress: () => void }) {
+const RED = '#A51B22';
+const GOLD = '#FFDE07';
+const COINS_OUT = 10;
+
+/**
+ * A red envelope someone else sent, dropped in the middle of the room. Everyone opens their own:
+ * tapping it claims your share right here, coins burst out and a card shows what you got — and
+ * only what you got. Nobody sees anyone else's amount.
+ */
+export function EnvelopeDrop({
+  envelope,
+  more,
+  onClaim,
+  onDone,
+}: {
+  envelope: RoomEnvelope;
+  /** Other unopened envelopes waiting behind this one. */
+  more: number;
+  onClaim: () => Promise<EnvelopeClaimResult>;
+  onDone: () => void;
+}) {
   const { px } = useDesignScale();
   const T = ENVELOPE.tile;
-  return (
-    <Pressable onPress={onPress} style={{ position: 'absolute', left: px(T.x), top: px(T.y + extra), width: px(T.width), height: px(T.height), borderRadius: px(T.radius), overflow: 'hidden' }}>
-      {/* 137.68deg, #FF8B25 → #F55066 → #EB11AA, as the Tools sheet's packet. */}
-      <LinearGradient
-        colors={['#FF8B25', '#F55066', '#EB11AA']}
-        locations={[0.0165, 0.48605, 0.9835]}
-        start={{ x: 0.17, y: 0.13 }}
-        end={{ x: 0.83, y: 0.87 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={{ position: 'absolute', left: px(T.flap.x), top: px(T.flap.y) }}>
-        <SvgXml xml={icons.tileFlap} width={px(T.flap.width)} height={px(T.flap.height)} />
-      </View>
-      <Image source={art.coin} resizeMode="cover" style={{ position: 'absolute', left: px(T.coin.x), top: px(T.coin.y), width: px(T.coin.size), height: px(T.coin.size) }} />
-    </Pressable>
-  );
-}
+  const k = 1.45;
+  const W = px(T.width * k);
+  const H = px(T.height * k);
+  const name = envelope.sender.display_name ?? 'Guftagu user';
 
-// ---------------------------------------------------------------- 575:3103
+  const [phase, setPhase] = useState<'idle' | 'opening' | 'opened' | 'failed'>('idle');
+  const [amount, setAmount] = useState(0);
+  const [note, setNote] = useState('');
 
-function Popup({ extra, onClose, children, white }: { extra: number; onClose: () => void; children: React.ReactNode; white?: boolean }) {
-  const { px } = useDesignScale();
-  const P = ENVELOPE.popup;
+  const drop = useRef(new Animated.Value(0)).current;
+  const swing = useRef(new Animated.Value(0)).current;
+  const glow = useRef(new Animated.Value(0)).current;
+  const burst = useRef(new Animated.Value(0)).current;
+  const card = useRef(new Animated.Value(0)).current;
+  const closing = useRef(false);
+
+  // Falls into the middle of the room, bounces to rest, then keeps swinging under a breathing glow.
+  useEffect(() => {
+    Animated.spring(drop, { toValue: 1, friction: 5, tension: 55, useNativeDriver: true }).start();
+    const sway = Animated.loop(
+      Animated.sequence([
+        Animated.timing(swing, { toValue: 1, duration: 480, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(swing, { toValue: -1, duration: 960, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(swing, { toValue: 0, duration: 480, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.delay(700),
+      ]),
+    );
+    const breathe = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glow, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(glow, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    sway.start();
+    breathe.start();
+    return () => { sway.stop(); breathe.stop(); };
+  }, [drop, swing, glow]);
+
+  const close = useCallback(() => {
+    if (closing.current) return;
+    closing.current = true;
+    Animated.timing(card, { toValue: 0, duration: 200, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(() => onDone());
+  }, [card, onDone]);
+
+  // The result card leaves on its own after a moment; a tap anywhere closes it sooner.
+  useEffect(() => {
+    if (phase !== 'opened' && phase !== 'failed') return;
+    const t = setTimeout(close, 3500);
+    return () => clearTimeout(t);
+  }, [phase, close]);
+
+  const open = async () => {
+    if (phase !== 'idle') return;
+    setPhase('opening');
+    try {
+      const res = await onClaim();
+      setAmount(res.amount);
+      setPhase('opened');
+      Animated.timing(burst, { toValue: 1, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+      Animated.spring(card, { toValue: 1, friction: 6, tension: 70, useNativeDriver: true }).start();
+    } catch (e) {
+      setNote(e instanceof ApiError ? e.displayMessage : 'Could not open the red envelope.');
+      setPhase('failed');
+      Animated.spring(card, { toValue: 1, friction: 6, tension: 70, useNativeDriver: true }).start();
+    }
+  };
+
+  const done = phase === 'opened' || phase === 'failed';
+  const translateY = drop.interpolate({ inputRange: [0, 1], outputRange: [-px(520), 0] });
+  const dropScale = drop.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
+  const rotate = swing.interpolate({ inputRange: [-1, 1], outputRange: ['-7deg', '7deg'] });
+  const glowScale = glow.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.12] });
+  const glowOpacity = glow.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.95] });
+  const cardScale = card.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] });
+  const coinSize = px(T.coin.size * k);
+
   return (
-    <View style={StyleSheet.absoluteFill}>
-      <Pressable onPress={onClose} style={[StyleSheet.absoluteFill, { backgroundColor: ENVELOPE.scrim }]} />
-      <View style={{ position: 'absolute', left: px(P.x), top: px(P.y + extra / 2), width: px(P.width), height: px(P.height), borderRadius: px(P.radius), overflow: 'hidden', backgroundColor: white ? colors.white : undefined }}>
-        {children}
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      {done ? (
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', opacity: card }]}>
+          <Pressable onPress={close} style={StyleSheet.absoluteFill} />
+        </Animated.View>
+      ) : null}
+
+      <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="box-none">
+        {!done ? (
+          <Animated.View style={{ alignItems: 'center', transform: [{ translateY }, { scale: dropScale }] }}>
+            {/* Who it is from. */}
+            <View style={[styles.row, { marginBottom: px(10), paddingLeft: px(3), paddingRight: px(12), height: px(30), borderRadius: px(15), backgroundColor: 'rgba(0,0,0,0.55)' }]}>
+              <Image source={avatarOf(envelope.sender)} resizeMode="cover" style={{ width: px(24), height: px(24), borderRadius: px(12), borderWidth: 1, borderColor: GOLD }} />
+              <Text numberOfLines={1} style={[styles.medium, { marginLeft: px(6), maxWidth: px(200), fontSize: px(12) }]}>{`${name}’s red envelope`}</Text>
+            </View>
+
+            <View style={{ width: W, height: H, alignItems: 'center', justifyContent: 'center' }}>
+              <Animated.View
+                pointerEvents="none"
+                style={{ position: 'absolute', width: W * 1.9, height: W * 1.9, borderRadius: W, backgroundColor: 'rgba(255,196,60,0.28)', opacity: glowOpacity, transform: [{ scale: glowScale }] }}
+              />
+              <Animated.View
+                pointerEvents="none"
+                style={{ position: 'absolute', width: W * 1.35, height: W * 1.35, borderRadius: W, backgroundColor: 'rgba(255,214,90,0.30)', opacity: glowOpacity }}
+              />
+              <Animated.View style={{ width: W, height: H, transform: [{ rotate }] }}>
+                <Pressable onPress={open} style={{ width: '100%', height: '100%', borderRadius: px(T.radius * k), overflow: 'hidden', borderWidth: px(2), borderColor: 'rgba(255,222,7,0.7)' }}>
+                  <LinearGradient
+                    colors={['#FF8B25', '#F55066', '#EB11AA']}
+                    locations={[0.0165, 0.48605, 0.9835]}
+                    start={{ x: 0.17, y: 0.13 }}
+                    end={{ x: 0.83, y: 0.87 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View style={{ position: 'absolute', left: px(T.flap.x * k), top: px(T.flap.y * k) }}>
+                    <SvgXml xml={icons.tileFlap} width={px(T.flap.width * k)} height={px(T.flap.height * k)} />
+                  </View>
+                  <Image source={art.coin} resizeMode="cover" style={{ position: 'absolute', left: px(T.coin.x * k), top: px(T.coin.y * k), width: coinSize, height: coinSize }} />
+                </Pressable>
+              </Animated.View>
+              {more > 0 ? (
+                <View style={[styles.center, { position: 'absolute', right: -px(8), top: -px(8), minWidth: px(26), height: px(26), paddingHorizontal: px(6), borderRadius: px(13), backgroundColor: GOLD, borderWidth: px(2), borderColor: colors.white }]}>
+                  <Text style={[styles.semiBold, { fontSize: px(12), color: RED }]}>{`+${more}`}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            <Pressable onPress={open} style={[styles.center, { marginTop: px(14), height: px(34), paddingHorizontal: px(22), borderRadius: px(17), backgroundColor: GOLD }]}>
+              <Text style={[styles.semiBold, { fontSize: px(14), color: RED }]}>{phase === 'opening' ? 'Opening…' : 'Tap to open'}</Text>
+            </Pressable>
+          </Animated.View>
+        ) : (
+          <>
+            {/* Coins flying out of the envelope. */}
+            {phase === 'opened'
+              ? Array.from({ length: COINS_OUT }, (_, i) => {
+                  const a = (i / COINS_OUT) * Math.PI * 2;
+                  const r = px(150 + (i % 3) * 22);
+                  return (
+                    <Animated.Image
+                      key={i}
+                      source={art.coin}
+                      pointerEvents="none"
+                      style={{
+                        position: 'absolute',
+                        width: px(30),
+                        height: px(30),
+                        opacity: burst.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 1, 0] }),
+                        transform: [
+                          { translateX: burst.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(a) * r] }) },
+                          { translateY: burst.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(a) * r] }) },
+                          { scale: burst.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1.1] }) },
+                        ],
+                      }}
+                    />
+                  );
+                })
+              : null}
+
+            {/* What you got — yours only. */}
+            <Animated.View style={{ width: px(280), borderRadius: px(22), overflow: 'hidden', backgroundColor: RED, borderWidth: px(3), borderColor: GOLD, opacity: card, transform: [{ scale: cardScale }] }}>
+              <Image source={art.popupBg} resizeMode="cover" style={{ position: 'absolute', left: 0, top: 0, width: px(280), height: px((280 * 1024) / 608) }} />
+              <View style={{ alignItems: 'center', paddingTop: px(26), paddingBottom: px(24), paddingHorizontal: px(16) }}>
+                <Image source={avatarOf(envelope.sender)} resizeMode="cover" style={{ width: px(64), height: px(64), borderRadius: px(32), borderWidth: px(2), borderColor: GOLD }} />
+                <Text numberOfLines={1} style={[styles.medium, { marginTop: px(8), fontSize: px(14), opacity: 0.9 }]}>{`${name}’s red envelope`}</Text>
+                {phase === 'opened' ? (
+                  <>
+                    <View style={[styles.row, { marginTop: px(14) }]}>
+                      <Image source={art.coin} resizeMode="cover" style={{ width: px(36), height: px(36), marginRight: px(8) }} />
+                      <Text style={[styles.semiBold, { fontSize: px(42), lineHeight: px(52), color: '#FFE58A' }]}>{`+${amount}`}</Text>
+                    </View>
+                    <Text style={[styles.medium, { fontSize: px(15) }]}>Coins</Text>
+                    <Text style={[styles.regular, { marginTop: px(10), fontSize: px(12), opacity: 0.85 }]}>Credited to your account</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={[styles.semiBold, { marginTop: px(16), fontSize: px(22), color: '#FFE58A' }]}>Oops!</Text>
+                    <Text style={[styles.regular, { marginTop: px(6), fontSize: px(13), textAlign: 'center', opacity: 0.9 }]}>{note}</Text>
+                  </>
+                )}
+              </View>
+            </Animated.View>
+          </>
+        )}
       </View>
     </View>
   );
 }
 
-export function EnvelopeOpenPopup({ extra, sender, onOpen, onClose }: { extra: number; sender: RoomUser; onOpen: () => void; onClose: () => void }) {
-  const { px } = useDesignScale();
-  const O = ENVELOPE.open;
-  const W = ENVELOPE.popup.width;
-  return (
-    <Popup extra={extra} onClose={onClose} white>
-      <Image source={art.popupBg} resizeMode="cover" style={{ position: 'absolute', left: px(O.bg.x), top: px(O.bg.y), width: px(O.bg.width), height: px(O.bg.height) }} />
-      <Image source={avatarOf(sender)} resizeMode="cover" style={{ position: 'absolute', left: px((W - O.avatar.size) / 2), top: px(O.avatar.y), width: px(O.avatar.size), height: px(O.avatar.size), borderRadius: px(O.avatar.size / 2) }} />
-      <Centered cx={O.name.centerX} cy={O.name.centerY} size={O.name.size} width={W - 20} style={styles.medium}>
-        {`${sender.display_name ?? 'Guftagu user'}’s red envelope`}
-      </Centered>
-      <View pointerEvents="none" style={{ position: 'absolute', left: px((W - O.ring.size) / 2), top: px(O.ring.y) }}>
-        <SvgXml xml={icons.openRing} width={px(O.ring.size)} height={px(O.ring.size)} />
-      </View>
-      <Pressable onPress={onOpen} style={{ position: 'absolute', left: px((W - O.disc.size) / 2), top: px(O.disc.y), width: px(O.disc.size), height: px(O.disc.size) }}>
-        <SvgXml xml={icons.openDisc} width={px(O.disc.size)} height={px(O.disc.size)} />
-      </Pressable>
-      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <Centered cx={O.label.centerX} cy={O.label.centerY} size={O.label.size} width={96} style={styles.medium}>Open</Centered>
-      </View>
-      {/* Figma's 4px gold stroke is inside the frame; drawn on top so it moves nothing. */}
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderWidth: px(O.border.width), borderColor: O.border.color, borderRadius: px(ENVELOPE.popup.radius) }]} />
-    </Popup>
-  );
-}
-
-// ---------------------------------------------------------------- 575:2972
-
-const stamp = (d: Date) => {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-};
-
-export function EnvelopeClaimedPopup({ extra, envelope, mine, onClose }: { extra: number; envelope: RedEnvelope; mine: EnvelopeClaim | null; onClose: () => void }) {
-  const { px } = useDesignScale();
-  const C = ENVELOPE.claimed;
-  const W = ENVELOPE.popup.width;
-  const R = C.row;
-  const black = { color: colors.black };
-  return (
-    <Popup extra={extra} onClose={onClose} white>
-      <View style={{ position: 'absolute', left: px(C.bg.x), top: px(C.bg.y), width: px(C.bg.width), height: px(C.bg.height), borderRadius: px(C.bg.radius), overflow: 'hidden' }}>
-        {/* Bottom-anchored: the image is taller than the pill. */}
-        <Image source={art.claimedBg} resizeMode="stretch" style={{ position: 'absolute', left: 0, bottom: 0, width: px(C.bg.width), height: px((C.bg.width * 1024) / 608) }} />
-      </View>
-      <Image source={avatarOf(envelope.sender)} resizeMode="cover" style={{ position: 'absolute', left: px(C.avatar.x), top: px(C.avatar.y), width: px(C.avatar.size), height: px(C.avatar.size), borderRadius: px(C.avatar.size / 2) }} />
-      <Centered cx={C.name.centerX} cy={C.name.centerY} size={C.name.size} width={W - 20} style={[styles.medium, black]}>
-        {`${envelope.sender.display_name ?? 'Guftagu user'}’s red envelope`}
-      </Centered>
-      {mine ? (
-        <>
-          <Text numberOfLines={1} style={[styles.semiBold, { position: 'absolute', left: 0, width: px(W), top: px(C.amount.y), textAlign: 'center', fontSize: px(C.amount.size), lineHeight: px(C.amount.size * 1.5), color: C.amount.color }]}>
-            {mine.amount}
-            <Text style={[styles.medium, { fontSize: px(C.amount.unitSize), color: C.amount.color }]}> Coins</Text>
-          </Text>
-          <Text style={[styles.regular, { position: 'absolute', left: 0, width: px(W), top: px(C.credited.y), textAlign: 'center', fontSize: px(C.credited.size), color: colors.black, opacity: 0.4 }]}>
-            Credited to your account
-          </Text>
-        </>
-      ) : null}
-      <Text numberOfLines={1} style={[styles.regular, { position: 'absolute', left: px(C.summary.x), top: px(C.summary.centerY - C.summary.size * 0.75), fontSize: px(C.summary.size), lineHeight: px(C.summary.size * 1.5), color: colors.black, opacity: 0.4 }]}>
-        {`Claimed ${envelope.claims.length}/${envelope.count}, Total ${envelope.gold} coins`}
-      </Text>
-      {/* Rows from 575:2982 down; the popup shows one, the rest scroll under it. */}
-      <ScrollView style={{ position: 'absolute', left: 0, width: px(W), top: px(R.avatar.y), bottom: 0 }} showsVerticalScrollIndicator={false}>
-        {envelope.claims.map((c) => {
-          return (
-            <View key={c.user.uuid} style={{ height: px(R.step) }}>
-              <Image source={avatarOf(c.user)} resizeMode="cover" style={{ position: 'absolute', left: px(R.avatar.x), top: 0, width: px(R.avatar.width), height: px(R.avatar.height), borderRadius: px(R.avatar.width) }} />
-              <Text numberOfLines={1} style={[styles.regular, { position: 'absolute', left: px(R.name.x), top: px(R.name.y - R.avatar.y), width: px(R.amount.centerX - 55 - R.name.x), fontSize: px(R.name.size), color: colors.black }]}>
-                {c.user.display_name ?? 'Guftagu user'}
-              </Text>
-              <Text numberOfLines={1} style={[styles.regular, { position: 'absolute', left: px(R.date.x), top: px(R.date.y - R.avatar.y), fontSize: px(R.date.size), color: colors.black, opacity: 0.4 }]}>
-                {stamp(c.at)}
-              </Text>
-              <Centered cx={R.amount.centerX} cy={R.amount.centerY - R.avatar.y} size={R.amount.size} width={110} style={[styles.medium, { color: R.amount.color }]}>
-                {`${c.amount} coins`}
-              </Centered>
-            </View>
-          );
-        })}
-      </ScrollView>
-    </Popup>
-  );
-}
-
 const styles = StyleSheet.create({
   chip: { position: 'absolute', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  center: { alignItems: 'center', justifyContent: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center' },
   regular: { fontFamily: typography.fontFamily.regular, color: colors.white },
   medium: { fontFamily: typography.fontFamily.medium, color: colors.white },
   semiBold: { fontFamily: typography.fontFamily.semiBold, color: colors.white },

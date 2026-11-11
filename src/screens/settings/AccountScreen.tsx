@@ -1,7 +1,9 @@
+import { Camera } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 import { SvgXml } from 'react-native-svg';
 
 import { ApiError, uploadFile } from '../../api/client';
@@ -112,7 +114,8 @@ export default function AccountScreen() {
       >
         <SvgXml xml={icons.editBadge} width={u(A.badge.box)} height={u(A.badge.box)} />
         <View style={{ position: 'absolute', left: u(A.edit.x - A.badge.x + (A.badge.box - A.badge.size) / 2), top: u(A.edit.y - A.badge.y + (A.badge.box - A.badge.size) / 2) }}>
-          <SvgXml xml={icons.edit} width={u(A.edit.size)} height={u(A.edit.size)} />
+          {/* A camera, not a pencil: tapping it changes the photo. */}
+          <Camera size={u(A.edit.size)} color="#FFFFFF" strokeWidth={2.2} />
         </View>
       </Pressable>
 

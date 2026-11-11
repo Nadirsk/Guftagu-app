@@ -1,8 +1,10 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert } from '../../components/AppAlert';
 
 import { api, ApiError } from '../../api/client';
+import { peek, refresh } from '../../lib/swrCache';
 import { useAuth } from '../../auth/AuthContext';
 import { UserAvatar } from '../../components/UserAvatar';
 import { avatarOf, type ChatUser } from '../chats/parts';
@@ -21,17 +23,14 @@ type BlockRow = { user: ChatUser | null; reason: string | null; blocked_at: stri
 export default function BlockListScreen() {
   const u = useSettingsUnit();
   const { token } = useAuth();
-  const [rows, setRows] = useState<BlockRow[] | null>(null);
+  const [rows, setRows] = useState<BlockRow[] | null>(() => peek<BlockRow[], BlockRow[]>('/blocks?per_page=100', token, (res) => (Array.isArray(res) ? res.filter((r) => r.user) : [])));
   const [busy, setBusy] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      let live = true;
-      api<BlockRow[]>('/blocks?per_page=100', { token })
-        .then((res) => live && setRows(Array.isArray(res) ? res.filter((r) => r.user) : []))
-        .catch(() => live && setRows([]));
+      const stop = refresh<BlockRow[]>('/blocks?per_page=100', token, setRows, (res) => (Array.isArray(res) ? res.filter((r) => r.user) : []), () => setRows((r) => r ?? []));
       return () => {
-        live = false;
+        stop();
       };
     }, [token]),
   );
