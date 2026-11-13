@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { Flag, Gift, MessageCircle, UserPlus, UserRound } from 'lucide-react-native';
+import { SvgXml } from 'react-native-svg';
+
+import * as profileIcons from '../../assets/profile/icons';
 import { SvgaPlayer } from '../../components/SvgaPlayer';
+import { COUNTRY_OPTIONS, countryFlagEmoji } from '../../constants/countryOptions';
+import { LevelBadge } from '../level/LevelBadge';
 import { UserAvatar } from '../../components/UserAvatar';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
@@ -111,10 +117,38 @@ export function NineSlice({ uri, src = 100, inset = 30, corner = 14, children, m
 /**
  * "View profile card", Mazag's way: a sheet rising from the bottom, the worn Profile Card laid
  * over its top as a border (wings above, rails down both sides, a round hole for the face), the
- * name, ID and levels under it, and Follow / Gift at the foot. The card art is 750 x 600 with the
+ * name with gender badge, flag + ID, the wealth/charm medals, and Follow / Chat / Gift / Report
+ * at the foot. The card art is 750 x 600 with the
  * hole centred at (375, 105); it is drawn as wide as the screen and the sheet starts below the wings.
  */
-export function ProfileCardSheet({ user, mine, onClose, onGift, onFollow, onChat }: { user: RoomUser; mine: boolean; onClose: () => void; onGift: () => void; onFollow: () => void; onChat: () => void }) {
+/** The flag for a country stored by name ("Pakistan") or by ISO code ("PK"); null when unknown. */
+function flagOf(country: string | null | undefined) {
+  if (!country) return null;
+  const c = country.trim();
+  const hit = COUNTRY_OPTIONS.find((o) => o.code.toLowerCase() === c.toLowerCase() || o.name.toLowerCase() === c.toLowerCase());
+  return hit ? countryFlagEmoji(hit.code) : null;
+}
+
+export function ProfileCardSheet({
+  user,
+  mine,
+  onClose,
+  onGift,
+  onFollow,
+  onChat,
+  onReport,
+  onMyProfile,
+}: {
+  user: RoomUser;
+  mine: boolean;
+  onClose: () => void;
+  onGift: () => void;
+  onFollow: () => void;
+  onChat: () => void;
+  onReport: () => void;
+  /** Your own card: leaves the room minimised and opens your Profile. */
+  onMyProfile: () => void;
+}) {
   const { px } = useDesignScale();
   const card = user.cosmetics?.profile_card;
   const W = 402;
@@ -124,10 +158,11 @@ export function ProfileCardSheet({ user, mine, onClose, onGift, onFollow, onChat
   const faceY = card ? holeY : 60;
   const [animated, setAnimated] = useState(false);
   const white = colors.white;
-  const round = (label: string, color: string, onPress: () => void) => (
-    <Pressable onPress={onPress} style={{ alignItems: 'center', width: px(86) }}>
+  const flag = flagOf(user.country);
+  const round = (label: string, color: string, Icon: typeof Gift, onPress: () => void) => (
+    <Pressable onPress={onPress} style={{ alignItems: 'center', width: px(label.length > 8 ? 130 : 76) }}>
       <View style={{ width: px(48), height: px(48), borderRadius: px(24), backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: px(18), color: white }}>{label === 'Gift' ? '🎁' : label === 'Chat' ? '💬' : '♥'}</Text>
+        <Icon size={px(22)} color={white} strokeWidth={2.2} />
       </View>
       <Text style={{ marginTop: px(6), fontFamily: typography.fontFamily.regular, fontSize: px(12), color: 'rgba(255,255,255,0.85)' }}>{label}</Text>
     </Pressable>
@@ -143,14 +178,30 @@ export function ProfileCardSheet({ user, mine, onClose, onGift, onFollow, onChat
           <UserAvatar source={avatarOf(user)} frame={user.frame} size={px(80)} />
         </View>
         <View style={{ position: 'absolute', left: 0, right: 0, top: px(faceY + 62), alignItems: 'center' }}>
-          <Text numberOfLines={1} style={{ maxWidth: px(300), fontFamily: typography.fontFamily.medium, fontSize: px(20), color: white }}>{user.display_name ?? 'Guftagu user'}</Text>
-          {user.guftagu_id ? <Text style={{ marginTop: px(4), fontFamily: typography.fontFamily.regular, fontSize: px(13), color: 'rgba(255,255,255,0.7)' }}>ID:{user.guftagu_id}</Text> : null}
-          <Text style={{ marginTop: px(8), fontFamily: typography.fontFamily.regular, fontSize: px(12), color: '#F5C96A' }}>Wealth Lv.{user.wealth_level ?? 0}  ·  Charm Lv.{user.charm_level ?? 0}</Text>
+          {/* Name with the gender badge beside it, as on the Profile tab. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: px(6), maxWidth: px(320) }}>
+            <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: typography.fontFamily.medium, fontSize: px(20), color: white }}>{user.display_name ?? 'Guftagu user'}</Text>
+            {user.gender === 'male' || user.gender === 'female' ? (
+              <SvgXml xml={user.gender === 'male' ? profileIcons.male : profileIcons.female} width={px(20)} height={px(20)} />
+            ) : null}
+          </View>
+          {/* Country flag, then the ID. */}
+          <View style={{ marginTop: px(4), flexDirection: 'row', alignItems: 'center', gap: px(6) }}>
+            {flag ? <Text style={{ fontSize: px(15) }}>{flag}</Text> : null}
+            {user.guftagu_id ? <Text style={{ fontFamily: typography.fontFamily.regular, fontSize: px(13), color: 'rgba(255,255,255,0.7)' }}>ID:{user.guftagu_id}</Text> : null}
+          </View>
+          {/* The wealth and charm grade medals, as on the Profile tab, in place of the level text. */}
+          <View style={{ marginTop: px(10), flexDirection: 'row', gap: px(6) }}>
+            <LevelBadge kind="wealth" level={user.wealth_level ?? 0} height={22} />
+            <LevelBadge kind="charm" level={user.charm_level ?? 0} height={22} />
+          </View>
         </View>
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: px(26), flexDirection: 'row', justifyContent: 'center', gap: px(20) }}>
-          {mine ? null : round('Follow', '#E6577A', onFollow)}
-          {mine ? null : round('Chat', '#2FA4B8', onChat)}
-          {round('Gift', '#7B5CF0', onGift)}
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: px(26), flexDirection: 'row', justifyContent: 'center', gap: px(10) }}>
+          {mine ? null : round('Follow', '#E6577A', UserPlus, onFollow)}
+          {mine ? null : round('Chat', '#2FA4B8', MessageCircle, onChat)}
+          {/* Your own card has nothing to send yourself: it takes you to your Profile instead. */}
+          {mine ? round('Go to my profile', '#7B5CF0', UserRound, onMyProfile) : round('Gift', '#7B5CF0', Gift, onGift)}
+          {mine ? null : round('Report', '#5C5F6B', Flag, onReport)}
         </View>
       </View>
     </View>

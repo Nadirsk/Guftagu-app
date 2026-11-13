@@ -11,6 +11,7 @@ import {
   Share,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SvgXml } from 'react-native-svg';
@@ -128,7 +129,7 @@ export function RoomDrawer({
   const { px } = useDesignScale();
   const { token } = useAuth();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const roomsPath = `/rooms/live?limit=20&except=${roomUuid}`;
+  const roomsPath = `/rooms/live?limit=20&kind=voice&except=${roomUuid}`;
   // Reopened: show what was fetched last time at once and only swap if it changed.
   const [rooms, setRooms] = useState<LiveRoom[] | null>(() => peek<LiveRoom[]>(roomsPath, token));
   const c = DRAWER.card;
@@ -271,24 +272,41 @@ export function RoomDrawer({
 
 // ---------------------------------------------------------------- 280:5181
 
-export type ToolKey = 'clear' | 'theme' | 'mode' | 'sound' | 'music' | 'kick' | 'mute' | 'lock' | 'redPacket' | 'luckyDraw' | 'luckyNumber';
+export type ToolKey = 'clear' | 'theme' | 'mode' | 'sound' | 'music' | 'kick' | 'mute' | 'lock' | 'redPacket' | 'luckyDraw' | 'luckyNumber' | 'pk';
 
-const TOOL_ROWS: { key: ToolKey; label: string; xml: string; size: number }[][] = [
-  [
-    { key: 'clear', label: 'Clear chat', xml: icons.toolBrush, size: 17 },
-    { key: 'theme', label: 'Room Theme', xml: icons.toolTheme, size: 16 },
-    // 280:5055 puts Room Mode where Sound Effect was (that one only ever said "Coming soon").
-    { key: 'mode', label: 'Room Mode', xml: icons.toolHouse, size: 16 },
-  ],
-  [
-    { key: 'music', label: 'Music', xml: icons.toolMusic, size: 17 },
-    { key: 'kick', label: 'Kick-Out', xml: icons.toolKick, size: 16 },
-    { key: 'mute', label: 'Mute', xml: icons.toolMute, size: 16 },
-  ],
+/**
+ * The tools in Figma's order, three to a row. `owner` ones change the room or other people
+ * (theme, layout, seats, removing someone) and only the room's owner sees them; the rest —
+ * clearing your own chat view, music — are for everyone. Rows close up when some are hidden.
+ */
+const TOOL_LIST: { key: ToolKey; label: string; xml: string; size: number; icon: number; owner: boolean }[] = [
+  { key: 'clear', label: 'Clear chat', xml: icons.toolBrush, size: 17, icon: 39, owner: false },
+  { key: 'theme', label: 'Room Theme', xml: icons.toolTheme, size: 16, icon: 36, owner: true },
+  // 280:5055 puts Room Mode where Sound Effect was (that one only ever said "Coming soon").
+  { key: 'mode', label: 'Room Mode', xml: icons.toolHouse, size: 16, icon: 39, owner: true },
+  { key: 'music', label: 'Music', xml: icons.toolMusic, size: 17, icon: 36, owner: false },
+  { key: 'kick', label: 'Kick-Out', xml: icons.toolKick, size: 16, icon: 36, owner: true },
+  { key: 'mute', label: 'Mute', xml: icons.toolMute, size: 16, icon: 36, owner: true },
+  { key: 'lock', label: 'Seat Lock', xml: icons.toolLock, size: 16, icon: 38, owner: true },
 ];
 
-export function ToolsSheet({ extra, onClose, onPick }: { extra: number; onClose: () => void; onPick: (key: ToolKey) => void }) {
-  const { px } = useDesignScale();
+/** Figma's three column centres (row 1: 85/102/102 wide from x 27, 28 apart) and the row tops. */
+const TOOL_COLUMNS = [69.5, 191, 321];
+const TOOL_ROW_YS = [97, 210, 312];
+
+/** 280:5181's second Games row: PK under Red Packet, 133 below it, in a 73×83 box. */
+const PK = { centerX: 69.5, dy: 133, width: 73, height: 83 };
+/** Sheet-relative bottom of everything, PK included, plus a margin under it. */
+const TOOLS_CONTENT_BOTTOM = TOOLS.games.redPacket.y + PK.dy + PK.height + 26;
+
+export function ToolsSheet({ extra, owner, onClose, onPick }: { extra: number; owner: boolean; onClose: () => void; onPick: (key: ToolKey) => void }) {
+  const { px, ratio } = useDesignScale();
+  const { height: winH } = useWindowDimensions();
+  const tools = TOOL_LIST.filter((t) => owner || !t.owner);
+  const rows = Math.ceil(tools.length / 3);
+  // Rows nobody sees come off the top of the sheet; Games moves up by as much.
+  const lift = TOOL_ROW_YS[TOOL_ROW_YS.length - 1] - TOOL_ROW_YS[rows - 1];
+  const gy = (y: number) => y - lift;
   const g = TOOLS.games;
 
   // Figma sets these in Mona Sans; Poppins runs wider, so every cell is LABEL wide,
@@ -303,7 +321,8 @@ export function ToolsSheet({ extra, onClose, onPick }: { extra: number; onClose:
   return (
     <View style={StyleSheet.absoluteFill}>
       <Backdrop dim="rgba(0,0,0,0.5)" onClose={onClose} />
-      <View style={{ position: 'absolute', left: 0, right: 0, top: px(TOOLS.y + extra), bottom: 0, backgroundColor: colors.white }}>
+      {/* Figma's top, unless the sheet would then run off the bottom: then it opens higher. */}
+      <View style={{ position: 'absolute', left: 0, right: 0, top: px(Math.min(TOOLS.y + extra + lift, winH / ratio - (TOOLS_CONTENT_BOTTOM - lift))), bottom: 0, backgroundColor: colors.white }}>
         <Text style={[styles.medium, { position: 'absolute', left: px(TOOLS.title.centerX - 30), width: px(60), top: px(TOOLS.title.y), fontSize: px(TOOLS.title.size), color: colors.black, textAlign: 'center' }]}>
           Tools
         </Text>
@@ -311,35 +330,19 @@ export function ToolsSheet({ extra, onClose, onPick }: { extra: number; onClose:
           <SvgXml xml={icons.close} width={px(TOOLS.close.size)} height={px(TOOLS.close.size)} />
         </Pressable>
 
-        {TOOLS.rows.map((row, r) => {
-          // Figma lays each row out with flex gaps; the same centres, placed directly,
-          // let every cell be LABEL wide without moving its icon.
-          let x = TOOLS.rowX;
-          return TOOL_ROWS[r].map((tool, i) => {
-            const center = x + row.items[i].width / 2;
-            x += row.items[i].width + TOOLS.rowGap;
-            return (
-              <Pressable key={tool.key} onPress={() => onPick(tool.key)} style={[cell(center, row.y), { gap: px(TOOLS.iconGap) }]}>
-                <View style={{ height: px(39), justifyContent: 'center' }}>
-                  <SvgXml xml={tool.xml} width={px(row.items[i].icon)} height={px(row.items[i].icon)} />
-                </View>
-                {label(tool.label, tool.size)}
-              </Pressable>
-            );
-          });
-        })}
-        <Pressable
-          onPress={() => onPick('lock')}
-          style={[cell(TOOLS.lock.x + TOOLS.lock.width / 2, TOOLS.lock.y), { gap: px(TOOLS.iconGap) }]}
-        >
-          <SvgXml xml={icons.toolLock} width={px(TOOLS.lock.icon)} height={px(TOOLS.lock.icon)} />
-          {label('Seat Lock')}
-        </Pressable>
+        {tools.map((tool, i) => (
+          <Pressable key={tool.key} onPress={() => onPick(tool.key)} style={[cell(TOOL_COLUMNS[i % 3], TOOL_ROW_YS[Math.floor(i / 3)]), { gap: px(TOOLS.iconGap) }]}>
+            <View style={{ height: px(39), justifyContent: 'center' }}>
+              <SvgXml xml={tool.xml} width={px(tool.icon)} height={px(tool.icon)} />
+            </View>
+            {label(tool.label, tool.size)}
+          </Pressable>
+        ))}
 
-        <Text style={[styles.medium, { position: 'absolute', left: px(g.title.centerX - 40), width: px(80), top: px(g.title.y), fontSize: px(g.title.size), color: colors.black, textAlign: 'center' }]}>
+        <Text style={[styles.medium, { position: 'absolute', left: px(g.title.centerX - 40), width: px(80), top: px(gy(g.title.y)), fontSize: px(g.title.size), color: colors.black, textAlign: 'center' }]}>
           Games
         </Text>
-        <Pressable onPress={() => onPick('redPacket')} style={[cell(g.redPacket.x + g.redPacket.width / 2, g.redPacket.y), { gap: px(g.gap) }]}>
+        <Pressable onPress={() => onPick('redPacket')} style={[cell(g.redPacket.x + g.redPacket.width / 2, gy(g.redPacket.y)), { gap: px(g.gap) }]}>
           {/* 577:5295 — the envelope is drawn, not an image: gradient, shine, coin. */}
           <View style={{ width: px(g.redPacket.box.width), height: px(g.redPacket.box.height), borderRadius: px(g.redPacket.box.radius), overflow: 'hidden' }}>
             <RedPacketFill />
@@ -350,13 +353,19 @@ export function ToolsSheet({ extra, onClose, onPick }: { extra: number; onClose:
           </View>
           {label('Red Packet')}
         </Pressable>
-        <Pressable onPress={() => onPick('luckyDraw')} style={[cell(g.luckyDraw.x + g.luckyDraw.width / 2, g.luckyDraw.y), { gap: px(g.gap) }]}>
+        <Pressable onPress={() => onPick('luckyDraw')} style={[cell(g.luckyDraw.x + g.luckyDraw.width / 2, gy(g.luckyDraw.y)), { gap: px(g.gap) }]}>
           <Image source={require('../../assets/room/lucky-draw.png')} resizeMode="cover" style={{ width: px(g.luckyDraw.image.width), height: px(g.luckyDraw.image.height) }} />
           {label('Lucky Draw')}
         </Pressable>
-        <Pressable onPress={() => onPick('luckyNumber')} style={[cell(g.luckyNumber.x + g.luckyNumber.width / 2, g.luckyNumber.y), { gap: px(g.gap) }]}>
+        <Pressable onPress={() => onPick('luckyNumber')} style={[cell(g.luckyNumber.x + g.luckyNumber.width / 2, gy(g.luckyNumber.y)), { gap: px(g.gap) }]}>
           <Image source={require('../../assets/room/lucky-number.png')} resizeMode="cover" style={{ width: px(g.luckyNumber.image.width), height: px(g.luckyNumber.image.height) }} />
           {label('Lucky Number')}
+        </Pressable>
+        <Pressable
+          onPress={() => onPick('pk')}
+          style={{ position: 'absolute', left: px(PK.centerX - PK.width / 2), top: px(gy(g.redPacket.y + PK.dy)), width: px(PK.width), height: px(PK.height) }}
+        >
+          <Image source={require('../../assets/room/pk.png')} resizeMode="contain" style={{ width: '100%', height: '100%' }} />
         </Pressable>
       </View>
     </View>

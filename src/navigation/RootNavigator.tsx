@@ -126,7 +126,7 @@ export default function RootNavigator() {
             <Stack.Screen name="Exchange" component={ExchangeScreen} />
             <Stack.Screen name="UserProfile" component={UserProfileScreen} />
             <Stack.Screen name="CreateVideo" component={CreateVideoScreen} />
-            <Stack.Screen name="LiveVideoRoom" component={LiveVideoRoomScreen} options={{ gestureEnabled: false }} />
+            <Stack.Screen name="LiveVideoRoom" component={LiveVideoRoomScreen} options={({ route }) => ({ gestureEnabled: false, animation: route.params?.from ? 'none' : 'default' })} />
             <Stack.Screen name="LiveVideoEnded" component={LiveVideoEndedScreen} options={{ gestureEnabled: false }} />
             <Stack.Screen name="Withdraw" component={WithdrawScreen} />
             <Stack.Screen name="WithdrawMethod" component={WithdrawMethodScreen} />

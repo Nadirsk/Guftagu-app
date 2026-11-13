@@ -192,7 +192,7 @@ export default function PartyScreen({ initialSection = 'Related' }: { initialSec
 
   const load = useCallback(async () => {
     try {
-      setRooms(await api<LiveRoom[]>(`/rooms/live?limit=30&${query}`, { token }));
+      setRooms(await api<LiveRoom[]>(`/rooms/live?limit=30&kind=voice&${query}`, { token }));
     } catch {
       setRooms((r) => r ?? []);
     }
@@ -200,7 +200,7 @@ export default function PartyScreen({ initialSection = 'Related' }: { initialSec
 
   // Switching back to a tab already loaded shows it at once; the fetch only swaps it if it changed.
   useEffect(() => {
-    const path = `/rooms/live?limit=30&${query}`;
+    const path = `/rooms/live?limit=30&kind=voice&${query}`;
     setRooms(peek<LiveRoom[]>(path, token));
     return swr<LiveRoom[]>(path, token, setRooms, undefined, () => setRooms((r) => r ?? []));
   }, [query, token]);

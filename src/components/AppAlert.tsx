@@ -1,3 +1,4 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { AlertTriangle, CheckCircle2, HelpCircle, Info, XCircle } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
@@ -15,7 +16,8 @@ export type AlertButton = {
   onPress?: () => void;
   style?: 'default' | 'cancel' | 'destructive';
 };
-type AlertOptions = { cancelable?: boolean; onDismiss?: () => void };
+/** `live`: the plain white box with a gradient Confirm of the live rooms; `live-sheet`: their bottom action list. */
+type AlertOptions = { cancelable?: boolean; onDismiss?: () => void; look?: 'live' | 'live-sheet' };
 type Item = { id: number; title: string; message?: string; buttons: AlertButton[]; options?: AlertOptions };
 
 let seq = 0;
@@ -87,6 +89,59 @@ export function AlertHost() {
   }, []);
 
   if (!current) return null;
+
+  if (current.options?.look === 'live-sheet' || current.options?.look === 'live') {
+    const cancelBtn = current.buttons.find((b) => b.style === 'cancel');
+    const dismissLive = () => close(cancelBtn);
+    if (current.options.look === 'live-sheet') {
+      const rows = current.buttons.filter((b) => b !== cancelBtn);
+      return (
+        <Modal transparent animationType="fade" statusBarTranslucent visible onRequestClose={dismissLive}>
+          <View style={live.backdropBottom}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={dismissLive} />
+            <View style={live.sheet}>
+              {current.title ? <Text style={live.sheetTitle}>{current.title}</Text> : null}
+              {rows.map((b, i) => (
+                <Pressable key={`${b.text}-${i}`} onPress={() => close(b)} style={[live.sheetRow, i > 0 || current.title ? live.sheetRowLine : null]}>
+                  <Text style={live.sheetText}>{b.text}</Text>
+                </Pressable>
+              ))}
+              <View style={live.sheetGap} />
+              <Pressable onPress={dismissLive} style={live.sheetRow}>
+                <Text style={[live.sheetText, { color: '#777777' }]}>{cancelBtn?.text ?? 'Cancel'}</Text>
+              </Pressable>
+              <View style={{ height: 14 }} />
+            </View>
+          </View>
+        </Modal>
+      );
+    }
+    const okBtns = current.buttons.filter((b) => b !== cancelBtn);
+    return (
+      <Modal transparent animationType="fade" statusBarTranslucent visible onRequestClose={dismissLive}>
+        <View style={live.backdropCenter}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={dismissLive} />
+          <View style={[live.box, { width: Math.min(width - 56, 330) }]}>
+            <Text style={live.line}>{current.title}</Text>
+            {current.message ? <Text style={live.sub}>{current.message}</Text> : null}
+            <View style={live.row}>
+              {cancelBtn ? (
+                <Pressable onPress={dismissLive} style={[live.pill, { backgroundColor: '#DADADD' }]}>
+                  <Text style={[live.pillText, { color: '#8A8A8F' }]}>{cancelBtn.text ?? 'Cancel'}</Text>
+                </Pressable>
+              ) : null}
+              {okBtns.map((b, i) => (
+                <Pressable key={`${b.text}-${i}`} onPress={() => close(b)} style={live.pill}>
+                  <LinearGradient colors={['#F6D90B', '#00D3B3']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} />
+                  <Text style={[live.pillText, { color: '#FFFFFF' }]}>{b.text ?? 'OK'}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
 
   const tone = TONES[toneOf(current)];
   const Icon = tone.Icon;
@@ -161,4 +216,22 @@ const styles = StyleSheet.create({
   buttons: { alignSelf: 'stretch', gap: 10, marginTop: 22 },
   button: { height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
   buttonText: { fontFamily: typography.fontFamily.medium, fontSize: 15 },
+});
+
+/** The look of the live rooms' own dialogs and action lists (Ziigo's): plain white, thin grey text, a gradient Confirm. */
+const live = StyleSheet.create({
+  backdropCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  backdropBottom: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  box: { backgroundColor: '#FFFFFF', borderRadius: 22, paddingHorizontal: 18, paddingTop: 34, paddingBottom: 22, alignItems: 'center' },
+  line: { fontFamily: typography.fontFamily.regular, fontSize: 16, lineHeight: 22, color: '#4A4A4F', textAlign: 'center' },
+  sub: { fontFamily: typography.fontFamily.regular, fontSize: 13, lineHeight: 19, color: '#8A8A8F', textAlign: 'center', marginTop: 8 },
+  row: { flexDirection: 'row', alignSelf: 'stretch', justifyContent: 'center', gap: 14, marginTop: 30 },
+  pill: { flex: 1, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  pillText: { fontFamily: typography.fontFamily.medium, fontSize: 16 },
+  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden' },
+  sheetTitle: { fontFamily: typography.fontFamily.regular, fontSize: 13, color: '#8A8A8F', textAlign: 'center', paddingVertical: 14 },
+  sheetRow: { height: 56, alignItems: 'center', justifyContent: 'center' },
+  sheetRowLine: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E6E6E8' },
+  sheetText: { fontFamily: typography.fontFamily.regular, fontSize: 17, color: '#1B1B1B' },
+  sheetGap: { height: 8, backgroundColor: '#F2F2F4' },
 });

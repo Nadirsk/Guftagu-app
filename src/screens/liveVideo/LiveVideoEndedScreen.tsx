@@ -11,7 +11,8 @@ import { chevronLeft, useUi } from './parts';
 
 /**
  * "Your live broadcast room has been ended" (Figma 2015:8140): the host's picture on top and a Live data
- * card — earnings, audience and new followers, which are all 0 until a video-room backend counts them.
+ * card from `POST /rooms/{uuid}/end` — earnings (the diamonds gifted in the live), audience, and how long it
+ * ran. New followers are not counted yet, so that stays 0.
  */
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -23,7 +24,7 @@ export default function LiveVideoEndedScreen() {
   const { user } = useAuth();
   const photo = params.cover ?? user?.avatar_url ?? null;
 
-  const stat = (left: number, top: number, value: number, label: string) => (
+  const stat = (left: number, top: number, value: number | string, label: string) => (
     <View style={[at(left, top), { width: px(51), alignItems: 'center' }]}>
       <Text style={[text(13, 'medium', colors.white), { textAlign: 'center' }]}>{value}</Text>
       <Text style={[text(13, 'medium', colors.white), { width: px(80), textAlign: 'center' }]}>{label}</Text>
@@ -46,12 +47,22 @@ export default function LiveVideoEndedScreen() {
       {/* Frame 1597881880 — Live data. */}
       <View style={[at(21, 319), { width: px(358), height: px(212), borderRadius: px(12), backgroundColor: 'rgba(255,255,255,0.08)' }]}>
         <Text style={[at(20, 25), text(15, 'medium', colors.white)]}>Live data</Text>
-        {stat(20, 83, 0, 'Earnings')}
+        {stat(20, 83, params.diamonds ?? 0, 'Earnings')}
         {stat(172, 83, params.audience, 'Audience')}
         {stat(20, 152, 0, 'Followers')}
+        {stat(172, 152, duration(params.durationSeconds ?? 0), 'Duration')}
       </View>
     </View>
   );
+}
+
+/** 3725 seconds -> "1:02:05"; under an hour -> "2:05". */
+function duration(total: number) {
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
 const styles = StyleSheet.create({

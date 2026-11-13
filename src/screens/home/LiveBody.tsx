@@ -1,6 +1,6 @@
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
@@ -26,9 +26,10 @@ import HeroCard from './HeroCard';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Tabs'>;
 type Person = { uuid: string; display_name: string | null; avatar_url: string | null };
-type LiveRoom = { uuid: string; name: string | null; cover_url: string | null; listener_count: number; owner: Person | null; members: Person[] };
+type LiveRoom = { uuid: string; kind?: 'voice' | 'video' | 'video_party'; name: string | null; cover_url: string | null; listener_count: number; owner: Person | null; members: Person[] };
 
-const PATH = '/rooms/live?limit=30&sort=recommended';
+// The Live tab is the live videos (solo and Video Party); voice rooms are on the Party tab.
+const PATH = '/rooms/live?limit=30&sort=recommended&kind=video';
 const RING_GREEN = '#1A9F0B'; // the story ring, sampled from the export
 // Figma dims the names to 31% white (69% at 45%), which is unreadable on the dark page; 85% keeps them quiet but legible.
 const NAME_DIM = 'rgba(255,255,255,0.85)';
@@ -53,8 +54,23 @@ export default function LiveBody({ originY, interactive = true, onOpenExplore }:
 
   // Shows what was fetched last time at once, then swaps it if the answer changed.
   useEffect(() => swr<LiveRoom[]>(PATH, token, setRooms), [token]);
+  // A live ends and another starts all the time: re-read while this tab is on screen, and each time it is shown again.
+  useFocusEffect(
+    useCallback(() => {
+      let cancel = swr<LiveRoom[]>(PATH, token, setRooms);
+      const timer = setInterval(() => {
+        cancel();
+        cancel = swr<LiveRoom[]>(PATH, token, setRooms);
+      }, 8000);
+      return () => {
+        cancel();
+        clearInterval(timer);
+      };
+    }, [token]),
+  );
 
-  const open = (room: LiveRoom) => interactive && navigation.navigate('Room', { uuid: room.uuid });
+  const open = (room: LiveRoom) =>
+    interactive && (room.kind === 'voice' || !room.kind ? navigation.navigate('Room', { uuid: room.uuid }) : navigation.navigate('LiveVideoRoom', { uuid: room.uuid, cover: room.cover_url }));
 
   // Create starts a live video (Video / Video Party); voice rooms are still made from Party.
   const create = () => {
@@ -69,7 +85,10 @@ export default function LiveBody({ originY, interactive = true, onOpenExplore }:
 
   return (
     <View style={{ height: px(bottom - originY) }}>
-      <HeroCard originY={originY} onPress={interactive ? onOpenExplore : undefined} />
+      <HeroCard originY={originY} rooms={interactive ? rooms : []} onOpenRoom={(r) => {
+          const full = rooms.find((x) => x.uuid === r.uuid);
+          if (full) open(full);
+        }} onEmpty={create} />
 
       {/* Frame 1597881444 — Create + the people hosting right now; it runs on past the right edge. */}
       <ScrollView

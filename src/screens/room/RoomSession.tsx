@@ -11,7 +11,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { Animated, Easing, Image, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Alert, Animated, Easing, Image, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Power, Volume2, VolumeX } from 'lucide-react-native';
 
@@ -161,6 +161,8 @@ function RuntimeHost({ uuid }: { uuid: string }) {
     speakerOff,
     iceServers: snapshot?.signaling?.ice_servers ?? [{ urls: 'stun:stun.l.google.com:19302' }],
     ready: Boolean(snapshot),
+    video: snapshot?.room.kind === 'video' || snapshot?.room.kind === 'video_party',
+    cameraOn: Boolean(mySeat?.camera_on),
   });
 
   useEffect(() => {
@@ -229,9 +231,13 @@ export function MiniRoomPill() {
 
   // Kicked or closed while minimised: nothing left to come back to.
   const fatal = rt?.room.fatal;
+  const kicked = rt?.room.kicked;
   useEffect(() => {
-    if (minimized && fatal) end();
-  }, [minimized, fatal, end]);
+    if (!minimized || !fatal) return;
+    // Kicked or blocked while browsing elsewhere: still say who did it and for how long.
+    if (kicked) Alert.alert('Removed from room', fatal);
+    end();
+  }, [minimized, fatal, kicked, end]);
 
   if (!minimized || !activeUuid || !rt || rt.uuid !== activeUuid) return null;
 

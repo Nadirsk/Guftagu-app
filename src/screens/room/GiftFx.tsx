@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import { Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
 
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
@@ -13,7 +12,6 @@ const BANNER_COINS = 1000;
 // Mazag's timeline: ~1.5 s from the top of the room to its middle, ~1 s there, ~1 s to the seat, ~1.5 s on it.
 const FLY_MS = 5000;
 const PILL_MS = 4200;
-const COMBO_MS = 3500;
 
 type Point = { x: number; y: number };
 
@@ -308,63 +306,3 @@ function BannerView({ banner }: { banner: Banner }) {
 }
 
 const avatarSrc = (u: RoomUser | null) => avatarOf(u);
-
-/** The green "Combo" button that follows a send: a ring drains for three seconds; tap to send the same gift again. */
-export function ComboButton({ runKey, onPress, onQuantity, onExpire, top }: { runKey: number; onPress: () => void; onQuantity: (n: number) => void; onExpire: () => void; top: number }) {
-  const { px } = useDesignScale();
-  const t = useRef(new Animated.Value(0)).current;
-  const size = px(64);
-  const stroke = px(5);
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const AnimatedCircle = useRef(Animated.createAnimatedComponent(Circle)).current;
-
-  useEffect(() => {
-    t.setValue(0);
-    const run = Animated.timing(t, { toValue: 1, duration: COMBO_MS, easing: Easing.linear, useNativeDriver: false });
-    run.start(({ finished }) => finished && onExpire());
-    return () => run.stop();
-    // A new press restarts the ring; `onExpire` is stable enough for a 3 s timer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runKey, t]);
-
-  return (
-    <>
-    <Pressable onPress={onPress} style={{ position: 'absolute', right: px(14), top: px(top), width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <View style={{ position: 'absolute', width: size - stroke * 2, height: size - stroke * 2, borderRadius: size, backgroundColor: '#35B957' }} />
-      <Svg width={size} height={size} style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}>
-        <Circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,0.3)" strokeWidth={stroke} fill="none" />
-        <AnimatedCircle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          stroke="#FFE45C"
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          fill="none"
-          strokeDasharray={`${circ} ${circ}`}
-          strokeDashoffset={t.interpolate({ inputRange: [0, 1], outputRange: [0, circ] })}
-        />
-      </Svg>
-      <Text style={{ fontFamily: typography.fontFamily.medium, fontSize: px(14), color: colors.white }}>Combo</Text>
-      <Text style={{ fontFamily: typography.fontFamily.regular, fontSize: px(8), color: 'rgba(255,255,255,0.85)' }}>Long Press</Text>
-    </Pressable>
-    {[7, 77, 177].map((n, i) => {
-      // Mazag fans the three bubbles over the button: left-up, straight up, right-up.
-      const ang = [165, 120, 75][i];
-      const rad = (ang * Math.PI) / 180;
-      const dx = Math.cos(rad) * 54;
-      const up = Math.sin(rad) * 54;
-      return (
-        <Pressable
-          key={n}
-          onPress={() => onQuantity(n)}
-          style={{ position: 'absolute', right: px(14 + 32 - dx - 16), top: px(top + 32 - up - 16), width: px(32), height: px(32), borderRadius: px(16), backgroundColor: 'rgba(40,30,22,0.88)', borderWidth: 1.5, borderColor: '#2FBF5B', alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Text style={{ fontFamily: typography.fontFamily.medium, fontSize: px(11), color: colors.white }}>{n}</Text>
-        </Pressable>
-      );
-    })}
-    </>
-  );
-}

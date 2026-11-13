@@ -20,6 +20,7 @@ export type RoomUser = {
   /** Chat bubble, voice wave, profile card and floating-screen skin they wear; null when none. */
   cosmetics?: { bubble?: Cosmetic; mic_wave?: Cosmetic; profile_card?: Cosmetic; floating_screen?: Cosmetic } | null;
   country?: string | null;
+  gender?: 'male' | 'female' | string | null;
   /** Wealth / charm levels, for the grade medals beside the name in chat. */
   wealth_level?: number;
   charm_level?: number;
@@ -36,12 +37,20 @@ export type Seat = {
   gender?: string | null;
   /** Coins' worth of gifts the occupant has been sent in this room. */
   gift_value?: number;
+  /** The occupant's role in this room: 'owner', 'co_host' (an admin) or 'listener'. */
+  role?: 'owner' | 'co_host' | 'listener' | null;
 };
 
 /** `Api\RoomController::snapshot()` — verified against the controller. */
 export type RoomSnapshot = {
   room: {
     uuid: string;
+    /** `voice` (Party), `video` (a solo live) or `video_party`. Older servers send none: that is voice. */
+    kind?: 'voice' | 'video' | 'video_party';
+    seat_count?: number;
+    started_at?: string | null;
+    /** A solo live's private-call prices (coins per call) and whether the audience hears the call. */
+    call_prices?: { voice: number; video: number; sound: boolean };
     room_code: string;
     name: string;
     status: string;
@@ -130,9 +139,9 @@ export type GiftEvent = {
 };
 
 /**
- * How often the room is re-read. The backend broadcasts every change on the
- * `room.{uuid}` presence channel, but the app has no websocket client yet, so
- * for now the screen polls — seats and chat are a few seconds behind.
+ * How often the room is re-read anyway. Every change arrives live on the `room.{uuid}`
+ * presence channel (see the realtime effect below); these timers only catch what a dropped
+ * socket missed, and the state read doubles as the presence heartbeat (90 s window).
  */
 export type RoomEnvelope = { uuid: string; sender: RoomUser; total_coins: number; total_count: number; remaining_count: number };
 export type EnvelopeClaimResult = {
@@ -141,9 +150,9 @@ export type EnvelopeClaimResult = {
   claims: { user: RoomUser; amount: number; at: string | null }[];
 };
 
-const STATE_EVERY = 4000;
-const CHAT_EVERY = 3000;
-const GIFTS_EVERY = 6000;
+const STATE_EVERY = 10000;
+const CHAT_EVERY = 10000;
+const GIFTS_EVERY = 15000;
 
 /**
  * One voice room: joins it, keeps its state, chat and gift feed fresh while
@@ -160,6 +169,16 @@ export function useRoom(uuid: string) {
   const [envelopes, setEnvelopes] = useState<RoomEnvelope[]>([]);
   /** Set when joining fails for good — a closed room, a kick, a wrong password. */
   const [fatal, setFatal] = useState<string | null>(null);
+  /** The fatal one is a kick or a block from inside the room (not a closed room or a failed join). */
+  const [kicked, setKicked] = useState(false);
+  /** A one-line notice for you alone — made an admin… — shown as a toast. */
+  const [notice, setNotice] = useState<string | null>(null);
+  /** Bumped when a private call was requested, answered or ended: the calls sheet re-reads on it. */
+  const [callTick, setCallTick] = useState(0);
+  /** Moves on every arrival, departure, kick and seat change — the Online listeners list re-reads on it. */
+  const [roster, setRoster] = useState(0);
+  /** The owner or an admin just put you on a mic ("Take on the Mic"): Mazag's Tips card, mic still off. */
+  const [placedOnMic, setPlacedOnMic] = useState(false);
   const [active, setActive] = useState(AppState.currentState === 'active');
   /** Chat cleared from Tools → Clear chat hides everything up to this moment. */
   const clearedAt = useRef(0);
@@ -175,6 +194,8 @@ export function useRoom(uuid: string) {
       setSnapshot(await api<RoomSnapshot>(`${path}/state`, { token }));
     } catch (e) {
       if (e instanceof ApiError && (e.status === 403 || e.status === 404 || e.status === 410)) {
+        // KICKED: the live `member.kicked` frame never reached us; the poll says it instead.
+        if (e.code === 'KICKED') setKicked(true);
         setFatal(e.displayMessage);
       }
     }
@@ -295,8 +316,23 @@ export function useRoom(uuid: string) {
     const echo = getEcho(token);
     if (!echo) return;
     const channel = echo.join(`room.${uuid}`);
+    /** Seat, mic, lock, role… frames: re-read the room once, right away, however many arrive together. */
+    let soonTimer: ReturnType<typeof setTimeout> | null = null;
+    const soon = () => {
+      if (soonTimer) clearTimeout(soonTimer);
+      soonTimer = setTimeout(() => {
+        soonTimer = null;
+        refreshStateRef.current();
+      }, 120);
+    };
+    const isMe = (u?: string) => !!u && u === meRef.current;
+    const moved = () => setRoster((v) => v + 1);
+    /** Draw a seat change the moment its frame lands; the re-read that follows settles the details. */
+    const patchSeats = (fn: (seat: Seat) => Seat, my?: (m: RoomSnapshot['my']) => RoomSnapshot['my']) =>
+      setSnapshot((prev) => (prev ? { ...prev, seats: prev.seats.map(fn), my: my ? my(prev.my) : prev.my } : prev));
 
     channel.listen('.member.joined', (e: { user: RoomUser; listener_count: number }) => {
+      moved();
       setSnapshot((prev) => (prev ? { ...prev, room: { ...prev.room, listener_count: e.listener_count } } : prev));
       // Whoever has an effect gets "entered with …" from `entrance.effect` instead.
       pending.current.set(e.user.uuid, setTimeout(() => {
@@ -316,6 +352,8 @@ export function useRoom(uuid: string) {
     });
     channel.listen('.gift.sent', (e: { transaction_id: number; sender: RoomUser; receiver: RoomUser; gift: { code: string; thumbnail_url: string | null }; quantity: number; batch: string | null; coin_value: number }) => {
       refreshGiftsRef.current();
+      // The pill under the receiver's seat moves.
+      soon();
       // The sender already saw their own send the moment they tapped.
       if (e.sender?.uuid === meRef.current) return;
       setGiftFeed((f) => [...f.slice(-30), { id: `${e.transaction_id}`, batch: e.batch, sender: e.sender, receiver: e.receiver, gift: e.gift, quantity: e.quantity, coin_value: e.coin_value }]);
@@ -328,6 +366,77 @@ export function useRoom(uuid: string) {
     // The host changed Room Mode (everyone stood up, seats re-laid) or Room Theme
     // (background only): re-read the room now rather than at the next poll.
     channel.listen('.room.updated', () => refreshStateRef.current());
+    channel.listen('.room.call', () => {
+      setCallTick((n) => n + 1);
+      refreshStateRef.current();
+    });
+    // Someone was made (or stopped being) an admin: their seat sheet and our own powers change.
+    channel.listen('.member.role_changed', (e: { user_uuid: string; role: string }) => {
+      soon();
+      if (isMe(e.user_uuid)) {
+        setNotice(e.role === 'co_host' ? "You've been set as an admin by the room owner" : 'You are no longer an admin of this room');
+      }
+    });
+    // Everything on the seats: somebody sat down or got up, a mic or camera went on or off,
+    // the owner muted a seat, a seat was locked, a hand went up, the announcement changed.
+    channel.listen('.seat.occupied', (e: { seat_number: number; user?: RoomUser | null; placed_by?: string | null }) => {
+      const who = e.user ?? null;
+      patchSeats(
+        (s) =>
+          s.seat_number === e.seat_number
+            ? { ...s, user: who, locked: false, muted: e.placed_by ? true : s.muted, gift_value: 0, role: null }
+            : who && s.user?.uuid === who.uuid
+              ? { ...s, user: null }
+              : s,
+        isMe(who?.uuid) ? (m) => ({ ...m, seat_number: e.seat_number, muted: e.placed_by ? true : m.muted }) : undefined,
+      );
+      soon();
+      moved();
+      if (e.placed_by && isMe(e.user?.uuid)) setPlacedOnMic(true);
+    });
+    channel.listen('.seat.vacated', (e: { seat_number: number; user_uuid: string }) => {
+      patchSeats(
+        (s) => (s.seat_number === e.seat_number && s.user?.uuid === e.user_uuid ? { ...s, user: null } : s),
+        isMe(e.user_uuid) ? (m) => ({ ...m, seat_number: null }) : undefined,
+      );
+      soon();
+      moved();
+    });
+    channel.listen('.seat.locked', (e: { seat_number: number; locked: boolean }) => {
+      patchSeats((s) => (s.seat_number === e.seat_number ? { ...s, locked: e.locked, user: e.locked ? null : s.user } : s));
+      soon();
+    });
+    channel.listen('.seat.owner_muted', (e: { seat_number: number; muted: boolean }) => {
+      patchSeats((s) => (s.seat_number === e.seat_number ? { ...s, muted: e.muted } : s));
+      soon();
+    });
+    channel.listen('.mic.toggled', (e: { seat_number: number; user_uuid: string; muted: boolean }) => {
+      patchSeats(
+        (s) => (s.seat_number === e.seat_number ? { ...s, muted: e.muted } : s),
+        isMe(e.user_uuid) ? (m) => ({ ...m, muted: e.muted }) : undefined,
+      );
+      soon();
+    });
+    for (const ev of ['.camera.toggled', '.hand.toggled', '.room.announcement_changed']) {
+      channel.listen(ev, soon);
+    }
+    // Kicked out (for a while) or blocked: if it is us, the room closes; for everyone else
+    // the listener count drops and their seat empties.
+    channel.listen('.member.kicked', (e: { user_uuid: string; message: string; listener_count: number }) => {
+      if (isMe(e.user_uuid)) {
+        setKicked(true);
+        setFatal(e.message);
+        return;
+      }
+      setSnapshot((prev) => (prev ? { ...prev, room: { ...prev.room, listener_count: e.listener_count } } : prev));
+      soon();
+      moved();
+    });
+    // Chat: a new line shows the moment it is posted, not at the next poll.
+    channel.listen('.room.message.new', (e: ChatMessage) => {
+      if (stamp(e.created_at) <= clearedAt.current) return;
+      setMessages((prev) => (prev.some((m) => m.uuid === e.uuid) ? prev : [...prev, e]));
+    });
     // Red packets: a new one appears for everyone; each opening counts it down, and at zero it is gone.
     channel.listen('.envelope.created', (e: { envelope: RoomEnvelope }) => {
       setEnvelopes((prev) => (prev.some((x) => x.uuid === e.envelope.uuid) ? prev : [...prev, e.envelope]));
@@ -336,11 +445,13 @@ export function useRoom(uuid: string) {
       setEnvelopes((prev) => prev.flatMap((x) => (x.uuid !== e.envelope_uuid ? [x] : e.remaining_count > 0 ? [{ ...x, remaining_count: e.remaining_count }] : [])));
     });
     channel.listen('.member.left', (e: { listener_count: number }) => {
+      moved();
       setSnapshot((prev) => (prev ? { ...prev, room: { ...prev.room, listener_count: e.listener_count } } : prev));
     });
 
     const waiting = pending.current;
     return () => {
+      if (soonTimer) clearTimeout(soonTimer);
       waiting.forEach(clearTimeout);
       waiting.clear();
       echo.leave(`room.${uuid}`);
@@ -452,8 +563,15 @@ export function useRoom(uuid: string) {
 
   return {
     snapshot,
+    callTick,
     refresh: refreshState,
     fatal,
+    kicked,
+    notice,
+    roster,
+    placedOnMic,
+    clearPlacedOnMic: () => setPlacedOnMic(false),
+    clearNotice: () => setNotice(null),
     messages: messages.filter((m) => m.local || stamp(m.created_at) > clearedAt.current),
     gifts: gifts.filter((g) => stamp(g.created_at) > clearedAt.current),
     entrance: entrances[0] ?? null,
@@ -468,11 +586,21 @@ export function useRoom(uuid: string) {
     takeSeat: (seat: number) => act(`/seats/${seat}/take`, 'POST'),
     leaveSeat: () => act('/seats/leave', 'POST'),
     setMic: (muted: boolean) => act('/mic', 'PATCH', { muted }),
+    /** Video rooms: my camera on / off (my seat's `camera_on`, told to everyone). */
+    setCamera: (on: boolean) => act('/camera', 'PATCH', { camera_on: on }),
     muteSeat: (seat: number, muted: boolean) => act(`/seats/${seat}/mute`, 'POST', { muted }),
     lockSeat: (seat: number, locked: boolean) => act(`/seats/${seat}/lock`, 'PATCH', { locked }),
     /** Host: stand somebody up from their mic (they stay in the room). */
     removeFromSeat: (seat: number) => act(`/seats/${seat}/remove`, 'POST'),
     kick: (userUuid: string, minutes: number) => act(`/members/${userUuid}/kick`, 'POST', { minutes }),
+    /** Out of the room and on its block list, with no end. */
+    block: (userUuid: string) => act(`/members/${userUuid}/block`, 'POST'),
+    /** Owner / admin: everyone in the room who is not on a mic ("Take on the Mic" → Online listeners). */
+    listeners: () => api<RoomUser[]>(`${path}/listeners`, { token }),
+    /** Owner / admin: put that listener on this seat (a locked seat is unlocked for them). */
+    invite: (seat: number, userUuid: string) => act(`/seats/${seat}/invite`, 'POST', { user_uuid: userUuid }),
+    /** Owner: make somebody a room admin (co-host), or take it back. */
+    setAdmin: (userUuid: string, on: boolean) => act(`/members/${userUuid}/co-host`, on ? 'POST' : 'DELETE'),
     leave: () => api(`${path}/leave`, { method: 'POST', token }),
     /** Room Mode: another seat template; every seat is emptied. */
     changeMode: (seatTemplateId: number) => act('/mode', 'PATCH', { seat_template_id: seatTemplateId }),

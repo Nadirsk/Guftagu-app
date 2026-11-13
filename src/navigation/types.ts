@@ -10,8 +10,11 @@ export type RootStackParamList = {
   ProfileSetup: undefined;
   EmailAuth: undefined;
   PhoneAuth: undefined;
-  /** The tab shell: Home / Party / Chats / Mine under one fixed bottom bar. */
-  Tabs: undefined;
+  /**
+   * The tab shell: Home / Party / Chats / Mine under one fixed bottom bar. `tab` switches to that tab
+   * when given (e.g. the room's "Go to my profile", which minimises the room and opens Mine).
+   */
+  Tabs: { tab?: 'Home' | 'Party' | 'Chats' | 'Mine'; /** A fresh value per request, so asking for the same tab twice still switches. */ at?: number } | undefined;
   /** Pushed over the shell, so these cover the bar — as their frames draw. */
   Search: undefined;
   PostMoment: undefined;
@@ -61,8 +64,10 @@ export type RootStackParamList = {
   Exchange: undefined;
   /** Home › Live › Create: Video / Video Party (Figma 2015:7863 / 2015:8311), then the host's live room (2015:7951) and its ended summary (2015:8140). */
   CreateVideo: undefined;
-  LiveVideoRoom: { title: string; notice?: string; cover?: string | null; seats?: number };
-  LiveVideoEnded: { cover?: string | null; audience: number };
+  /** A live video the host just made, or one a viewer opened from the Live tab. */
+  /** `from`: 1 when reached by swiping up, -1 by swiping down: the page then slides in itself. */
+  LiveVideoRoom: { uuid: string; cover?: string | null; from?: 1 | -1 };
+  LiveVideoEnded: { cover?: string | null; audience: number; diamonds?: number; durationSeconds?: number };
   /** Diamonds → Withdraw (Figma 339:3066) and its method pages: empty / linked (340:3104, 345:6493), the list (340:3139), a link form (345:6470, 345:6519, 345:6548). */
   Withdraw: undefined;
   WithdrawMethod: undefined;

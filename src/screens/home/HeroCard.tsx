@@ -1,4 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
@@ -50,14 +51,51 @@ const SCRIM_LOCATIONS = [
  *
  * `originY` is the frame y its container starts at; `LIVE_CARD` is absolute.
  */
-export default function HeroCard({ originY = 0, onPress }: { originY?: number; onPress?: () => void }) {
+/** A live room as the card needs it (a row of `GET /rooms/live`). */
+export type HeroRoom = {
+  uuid: string;
+  name: string | null;
+  cover_url: string | null;
+  listener_count: number;
+  owner: { display_name?: string | null; avatar_url?: string | null } | null;
+};
+
+const ROTATE_MS = 4500;
+
+/**
+ * Real lives, one at a time, turning over every few seconds (the dots show which). Tapping a card opens that
+ * live. With nobody live it says so and sends you to start one — it never shows a made-up streamer.
+ */
+export default function HeroCard({
+  originY = 0,
+  rooms = [],
+  onOpenRoom,
+  onEmpty,
+}: {
+  originY?: number;
+  rooms?: HeroRoom[];
+  onOpenRoom?: (room: HeroRoom) => void;
+  onEmpty?: () => void;
+}) {
   const { px } = useDesignScale();
+  const [index, setIndex] = useState(0);
+  const count = rooms.length;
+  useEffect(() => {
+    if (count < 2) return;
+    const t = setInterval(() => setIndex((i) => (i + 1) % count), ROTATE_MS);
+    return () => clearInterval(t);
+  }, [count]);
+  const current = count > 0 ? rooms[index % count] : null;
+  const pic = current?.cover_url ?? current?.owner?.avatar_url ?? null;
+  const title = current ? (current.name || current.owner?.display_name || 'Live') : 'Nobody is live right now';
+  const onPress = current ? () => onOpenRoom?.(current) : onEmpty;
   const hero = LIVE_CARD;
   const { scrim, dots, streamer, badge, badgeWave, badgeCount } = HERO;
 
   return (
     <Pressable
       onPress={onPress}
+      accessibilityLabel={current ? `Open ${title}` : 'Go live'}
       style={{
         position: 'absolute',
         left: px(hero.x),
@@ -69,7 +107,7 @@ export default function HeroCard({ originY = 0, onPress }: { originY?: number; o
       }}
     >
       <Image
-        source={require('../../assets/home/hero-cover.jpg')}
+        source={pic ? { uri: pic } : require('../../assets/home/hero-cover.jpg')}
         style={{ position: 'absolute', width: px(hero.width), height: px(hero.height) }}
         resizeMode="cover"
       />
@@ -89,9 +127,13 @@ export default function HeroCard({ originY = 0, onPress }: { originY?: number; o
         }}
       />
 
-      <View style={{ position: 'absolute', left: px(dots.x), top: px(dots.y) }}>
-        <SvgXml xml={icons.heroDots} width={px(dots.width)} height={px(dots.height)} />
-      </View>
+      {count > 1 ? (
+        <View style={{ position: 'absolute', left: 0, right: 0, top: px(dots.y), height: px(dots.height), flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: px(5) }}>
+          {rooms.slice(0, 8).map((r, i) => (
+            <View key={r.uuid} style={{ width: px(i === index % count ? 16 : 7), height: px(7), borderRadius: px(4), backgroundColor: i === index % count ? colors.white : 'rgba(255,255,255,0.45)' }} />
+          ))}
+        </View>
+      ) : null}
 
       {/* node 483:2746 — avatar, then flag + title */}
       <View
@@ -101,12 +143,12 @@ export default function HeroCard({ originY = 0, onPress }: { originY?: number; o
         ]}
       >
         <Image
-          source={require('../../assets/home/hero-avatar.png')}
-          style={{ width: px(streamer.avatar), height: px(streamer.avatar) }}
+          source={current?.owner?.avatar_url ? { uri: current.owner.avatar_url } : require('../../assets/home/hero-avatar.png')}
+          style={{ width: px(streamer.avatar), height: px(streamer.avatar), borderRadius: px(streamer.avatar / 2) }}
         />
         <View style={[styles.streamerName, { gap: px(streamer.innerGap) }]}>
           <SvgXml xml={icons.flagIN} width={px(19)} height={px(12)} />
-          <Text style={[styles.streamerLabel, { fontSize: px(streamer.fontSize) }]}>Riya’s Live</Text>
+          <Text numberOfLines={1} style={[styles.streamerLabel, { fontSize: px(streamer.fontSize), maxWidth: px(220) }]}>{title}</Text>
         </View>
       </View>
 
@@ -129,7 +171,7 @@ export default function HeroCard({ originY = 0, onPress }: { originY?: number; o
             },
           ]}
         >
-          14
+          {current ? current.listener_count : 0}
         </Text>
       </View>
     </Pressable>

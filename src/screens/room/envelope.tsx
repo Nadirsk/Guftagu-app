@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, Keyboard, Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type TextStyle } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { ChevronLeft, HelpCircle, X } from 'lucide-react-native';
 import { SvgXml } from 'react-native-svg';
 
 import { ApiError } from '../../api/client';
 import * as icons from '../../assets/room/envelope/icons';
+import { useAuth } from '../../auth/AuthContext';
+import { peek, refresh } from '../../lib/swrCache';
 import { useDesignScale } from '../../theme/layout';
 import { colors, typography } from '../../theme/tokens';
 import { ENVELOPE } from './geometry';
@@ -19,36 +22,43 @@ import type { EnvelopeClaimResult, RoomEnvelope } from './useRoom';
 
 const art = {
   sheetBg: require('../../assets/room/envelope/sheet-bg.png'),
-  titlePill: require('../../assets/room/envelope/title-pill.png'),
   popupBg: require('../../assets/room/envelope/popup-bg.png'),
   coin: require('../../assets/room/envelope/coin.png'),
 };
 
-/** A label centred on a Figma point; Poppins' "normal" line is 1.5x its size. */
-function Centered({ cx, cy, size, width, style, children }: { cx: number; cy: number; size: number; width: number; style: StyleProp<TextStyle>; children: React.ReactNode }) {
-  const { px } = useDesignScale();
-  return (
-    <Text
-      numberOfLines={1}
-      style={[style, { position: 'absolute', left: px(cx - width / 2), top: px(cy - (size * 1.5) / 2), width: px(width), fontSize: px(size), lineHeight: px(size * 1.5), textAlign: 'center' }]}
-    >
-      {children}
-    </Text>
-  );
-}
-
 // ---------------------------------------------------------------- 575:3216 / 575:3417
+
+const GOLD_PRESETS = [1000, 2000, 5000, 10000, 20000];
+const COUNT_PRESETS = [5, 10, 20, 30, 40];
+/** Same as RoomEnvelopeService::MAX_COUNT and LIFETIME_MINUTES on the server. */
+const MAX_ENVELOPES = 100;
+const REFUND_MINUTES = 10;
+const SHEET_RED = '#A51B22';
+const SEND_RED = '#E8151F';
 
 type Pick = { preset: number | null; custom: string };
 const valueOf = (p: Pick) => (p.custom ? Number(p.custom) : p.preset ?? 0);
+const fmt = (n: number) => n.toLocaleString('en-US');
 
-export function EnvelopeSheet({ extra, onClose, onSend }: { extra: number; onClose: () => void; onSend: (gold: number, count: number) => void | Promise<void> }) {
+const RULES = [
+  'The coins leave your balance as soon as you send.',
+  'The total is split at random — every envelope holds at least 1 coin.',
+  'Everyone in the room except you can open one envelope each, first come first served.',
+  'Each person only sees what they got; nobody sees anyone else’s amount.',
+  `Anything not opened within ${REFUND_MINUTES} minutes comes back to you automatically.`,
+];
+
+export function EnvelopeSheet({ onClose, onSend }: { extra?: number; onClose: () => void; onSend: (gold: number, count: number) => void | Promise<void> }) {
   const { px } = useDesignScale();
-  const S = ENVELOPE.sheet;
-  const [gold, setGold] = useState<Pick>({ preset: ENVELOPE.goldChips[0].value, custom: '' });
-  const [count, setCount] = useState<Pick>({ preset: ENVELOPE.countChips[0].value, custom: '' });
+  const { token } = useAuth();
+  const [gold, setGold] = useState<Pick>({ preset: GOLD_PRESETS[0], custom: '' });
+  const [count, setCount] = useState<Pick>({ preset: COUNT_PRESETS[0], custom: '' });
   const [rules, setRules] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [tried, setTried] = useState(false);
+  const [balance, setBalance] = useState<number | null>(() => peek<{ coin_balance: number }, number>('/wallet', token, (w) => w.coin_balance));
+  useEffect(() => refresh<{ coin_balance: number }, number>('/wallet', token, setBalance, (w) => w.coin_balance), [token]);
+
   // The sheet sits on the bottom edge, so it rides up over the keyboard while a number is typed.
   const [kb, setKb] = useState(0);
   useEffect(() => {
@@ -57,152 +67,200 @@ export function EnvelopeSheet({ extra, onClose, onSend }: { extra: number; onClo
     return () => { show.remove(); hide.remove(); };
   }, []);
 
-  const send = () => {
-    const g = valueOf(gold);
-    const n = valueOf(count);
-    if (!Number.isInteger(g) || g <= 0) return setError('Enter the gold to send');
-    if (!Number.isInteger(n) || n <= 0) return setError('Enter how many envelopes');
-    if (n > g) return setError('Each envelope needs at least 1 gold');
-    onSend(g, n);
+  // Slides up from the bottom edge; closing plays it backwards.
+  const { height: winH } = useWindowDimensions();
+  const t = useRef(new Animated.Value(0)).current;
+  const closing = useRef(false);
+  useEffect(() => {
+    Animated.timing(t, { toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [t]);
+  const dismiss = () => {
+    if (closing.current) return;
+    closing.current = true;
+    Keyboard.dismiss();
+    Animated.timing(t, { toValue: 0, duration: 210, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(() => onClose());
   };
 
-  const chip = (key: string, box: { x: number; y: number; width: number }, label: string, selected: boolean, dim: boolean | undefined, onPress: () => void) => (
-    <Pressable
-      key={key}
-      onPress={onPress}
-      style={[styles.chip, { left: px(box.x), top: px(box.y), width: px(box.width), height: px(S.chip.height), borderRadius: px(S.chip.radius), backgroundColor: selected ? colors.white : dim ? S.chip.dim : S.chip.idle }]}
-    >
-      <Text numberOfLines={1} style={[styles.medium, { fontSize: px(S.chip.size), color: selected ? S.chip.selectedText : colors.white }]}>{label}</Text>
+  const g = valueOf(gold);
+  const n = valueOf(count);
+  const problem =
+    !Number.isInteger(g) || g <= 0 ? 'Choose how many coins to send'
+    : !Number.isInteger(n) || n <= 0 ? 'Choose how many envelopes'
+    : n > MAX_ENVELOPES ? `Up to ${MAX_ENVELOPES} envelopes at a time`
+    : n > g ? 'Each envelope needs at least 1 coin'
+    : balance !== null && g > balance ? 'You don’t have enough coins'
+    : null;
+
+  const send = async () => {
+    setTried(true);
+    if (problem || busy) return;
+    Keyboard.dismiss();
+    setBusy(true);
+    try {
+      await onSend(g, n);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cellStyle = (selected: boolean) => [
+    styles.center,
+    {
+      width: '31.5%' as const,
+      height: px(42),
+      marginBottom: px(10),
+      borderRadius: px(21),
+      borderWidth: 1,
+      borderColor: selected ? colors.white : 'rgba(255,255,255,0.28)',
+      backgroundColor: selected ? colors.white : 'rgba(255,255,255,0.14)',
+    },
+  ];
+
+  const grid = (presets: number[], pick: Pick, set: (p: Pick) => void, withCoin: boolean) => (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+      {presets.map((v) => {
+        const on = !pick.custom && pick.preset === v;
+        return (
+          <Pressable key={v} onPress={() => { Keyboard.dismiss(); set({ preset: v, custom: '' }); }} style={[cellStyle(on), styles.row]}>
+            {withCoin ? <Image source={art.coin} style={{ width: px(16), height: px(16), marginRight: px(5) }} /> : null}
+            <Text style={[on ? styles.semiBold : styles.medium, { fontSize: px(15), color: on ? SEND_RED : colors.white }]}>{fmt(v)}</Text>
+          </Pressable>
+        );
+      })}
+      <View style={cellStyle(pick.custom !== '')}>
+        <TextInput
+          value={pick.custom}
+          onChangeText={(txt) => {
+            const digits = txt.replace(/[^0-9]/g, '').slice(0, 7);
+            set(digits ? { preset: null, custom: digits } : { preset: pick.preset ?? presets[0], custom: '' });
+          }}
+          placeholder="Custom"
+          placeholderTextColor="rgba(255,255,255,0.7)"
+          keyboardType="number-pad"
+          style={[pick.custom ? styles.semiBold : styles.regular, { width: '100%', height: '100%', padding: 0, textAlign: 'center', fontSize: px(15), color: pick.custom ? SEND_RED : colors.white }]}
+        />
+      </View>
+    </View>
+  );
+
+  const label = (text: string, hint: string) => (
+    <View style={[styles.row, { justifyContent: 'space-between', marginBottom: px(10) }]}>
+      <Text style={[styles.semiBold, { fontSize: px(15) }]}>{text}</Text>
+      <Text style={[styles.regular, { fontSize: px(12), opacity: 0.75 }]}>{hint}</Text>
+    </View>
+  );
+
+  const roundBtn = (onPress: () => void, child: React.ReactNode) => (
+    <Pressable onPress={onPress} hitSlop={px(8)} style={[styles.center, { width: px(36), height: px(36), borderRadius: px(18), backgroundColor: 'rgba(0,0,0,0.25)' }]}>
+      {child}
     </Pressable>
   );
 
-  const input = (box: (typeof ENVELOPE)['goldInput'] | (typeof ENVELOPE)['countInput'], pick: Pick, set: (p: Pick) => void) => {
-    const selected = pick.custom !== '';
-    return (
-      <View style={[styles.chip, { left: px(box.x), top: px(box.y), width: px(box.width), height: px(S.chip.height), borderRadius: px(S.chip.radius), backgroundColor: selected ? colors.white : box.dim ? S.chip.dim : S.chip.idle }]}>
-        <TextInput
-          value={pick.custom}
-          onChangeText={(t) => {
-            setError(null);
-            const digits = t.replace(/[^0-9]/g, '').slice(0, 7);
-            set(digits ? { preset: null, custom: digits } : { preset: pick.preset, custom: '' });
-          }}
-          placeholder="Enter Number"
-          placeholderTextColor={box.color}
-          keyboardType="number-pad"
-          style={[selected ? styles.medium : styles.regular, { width: '100%', height: '100%', padding: 0, textAlign: 'center', fontSize: px(selected ? S.chip.size : box.size), color: selected ? S.chip.selectedText : colors.white }]}
-        />
-      </View>
-    );
-  };
+  const translateY = t.interpolate({ inputRange: [0, 1], outputRange: [winH, 0] });
 
   return (
     <View style={StyleSheet.absoluteFill}>
-      <Pressable onPress={onClose} style={StyleSheet.absoluteFill} />
-      <View
+      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)', opacity: t }]}>
+        <Pressable onPress={dismiss} style={StyleSheet.absoluteFill} />
+      </Animated.View>
+      <Animated.View
         style={{
           position: 'absolute',
           left: 0,
           right: 0,
-          top: px(S.y + extra) - kb,
           bottom: kb,
           overflow: 'hidden',
-          borderTopLeftRadius: px(S.radius.left),
-          borderTopRightRadius: px(S.radius.right),
-          backgroundColor: colors.white,
+          borderTopLeftRadius: px(26),
+          borderTopRightRadius: px(26),
+          backgroundColor: SHEET_RED,
+          transform: [{ translateY }],
         }}
       >
-        <Image source={art.sheetBg} resizeMode="stretch" style={{ position: 'absolute', left: px(S.bg.x), bottom: px(S.height + S.bg.y - S.bg.height), width: px(S.bg.width), height: px(S.bg.height) }} />
+        <Image source={art.sheetBg} resizeMode="cover" style={StyleSheet.absoluteFill} />
+        {/* Calms the art so every label and chip reads on it. */}
+        <LinearGradient colors={['rgba(165,27,34,0.35)', 'rgba(165,27,34,0.82)', SHEET_RED]} locations={[0, 0.35, 0.8]} style={StyleSheet.absoluteFill} />
 
-        <Pressable onPress={() => setRules((v) => !v)} hitSlop={px(8)} style={{ position: 'absolute', left: px(S.help.x), top: px(S.help.y) }}>
-          <SvgXml xml={icons.help} width={px(S.help.size)} height={px(S.help.size)} />
-        </Pressable>
-        <View style={{ position: 'absolute', left: px(S.title.x), top: px(S.title.y), width: px(S.title.width), height: px(S.title.height), overflow: 'hidden' }}>
-          <Image source={art.titlePill} resizeMode="stretch" style={{ position: 'absolute', left: 0, top: px(S.title.imageTop), width: px(S.title.width), height: px(S.title.imageHeight) }} />
-        </View>
-        <Centered cx={S.title.centerX} cy={S.title.centerY} size={S.title.size} width={S.title.width} style={styles.semiBold}>Red envelopes</Centered>
-        <Pressable onPress={onClose} hitSlop={px(4)} style={{ position: 'absolute', left: px(S.close.x), top: px(S.close.y), width: px(S.close.size), height: px(S.close.size) }}>
-          <SvgXml xml={icons.closeDisc} width={px(S.close.size)} height={px(S.close.size)} />
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              left: px(S.close.cross.centerX - S.close.x - S.close.cross.width / 2),
-              top: px(S.close.cross.centerY - S.close.y - S.close.cross.height / 2),
-              transform: [{ rotate: S.close.cross.rotate }],
-            }}
-          >
-            <SvgXml xml={icons.closeCross} width={px(S.close.cross.width)} height={px(S.close.cross.height)} />
+        {/* With the keyboard up there is less room than the sheet needs: it scrolls rather than
+            pushing its header off the top of the screen. */}
+        <ScrollView
+          style={{ maxHeight: winH - kb - px(44) }}
+          contentContainerStyle={{ paddingHorizontal: px(20), paddingTop: px(16), paddingBottom: px(26) }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          {/* Header: help / back, title, close. */}
+          <View style={[styles.row, { justifyContent: 'space-between', marginBottom: px(16) }]}>
+            {roundBtn(() => setRules((v) => !v), rules ? <ChevronLeft size={px(22)} color={colors.white} /> : <HelpCircle size={px(20)} color={colors.white} />)}
+            <Text style={[styles.semiBold, { fontSize: px(19) }]}>{rules ? 'Rules' : 'Red envelopes'}</Text>
+            {roundBtn(dismiss, <X size={px(20)} color={colors.white} />)}
           </View>
-        </Pressable>
 
-        {rules ? (
-          <RulesPanel />
-        ) : (
-          <>
-            <Centered cx={S.gold.label.centerX} cy={S.gold.label.centerY} size={S.labelSize} width={100} style={styles.medium}>Gold</Centered>
-            {ENVELOPE.goldChips.map((c) =>
-              chip(`g${c.value}`, c, String(c.value), !gold.custom && gold.preset === c.value, 'dim' in c ? c.dim : false, () => {
-                setError(null);
-                setGold({ preset: c.value, custom: '' });
-              }),
-            )}
-            {input(ENVELOPE.goldInput, gold, setGold)}
+          {rules ? (
+            <View style={{ minHeight: px(380) }}>
+              {RULES.map((line, i) => (
+                <View key={i} style={{ flexDirection: 'row', marginBottom: px(14) }}>
+                  <View style={[styles.center, { width: px(24), height: px(24), borderRadius: px(12), backgroundColor: GOLD, marginRight: px(12) }]}>
+                    <Text style={[styles.semiBold, { fontSize: px(12), color: SHEET_RED }]}>{i + 1}</Text>
+                  </View>
+                  <Text style={[styles.regular, { flex: 1, fontSize: px(14), lineHeight: px(21) }]}>{line}</Text>
+                </View>
+              ))}
+              <Pressable onPress={() => setRules(false)} style={[styles.center, { marginTop: 'auto', height: px(50), borderRadius: px(25), backgroundColor: colors.white }]}>
+                <Text style={[styles.semiBold, { fontSize: px(17), color: SEND_RED }]}>Got it</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <>
+              {/* Balance — dropped while typing to keep the sheet short. */}
+              {kb > 0 ? null : <View style={[styles.row, { alignSelf: 'center', marginBottom: px(18), paddingHorizontal: px(14), height: px(30), borderRadius: px(15), backgroundColor: 'rgba(0,0,0,0.25)' }]}>
+                <Text style={[styles.regular, { fontSize: px(13), opacity: 0.85 }]}>Balance</Text>
+                <Image source={art.coin} style={{ width: px(16), height: px(16), marginLeft: px(8), marginRight: px(4) }} />
+                <Text style={[styles.semiBold, { fontSize: px(13), color: '#FFE58A' }]}>{balance === null ? '…' : fmt(balance)}</Text>
+              </View>}
 
-            <Centered cx={S.numbers.label.centerX} cy={S.numbers.label.centerY} size={S.labelSize} width={120} style={styles.medium}>Numbers</Centered>
-            {ENVELOPE.countChips.map((c) =>
-              chip(`n${c.value}`, c, String(c.value), !count.custom && count.preset === c.value, false, () => {
-                setError(null);
-                setCount({ preset: c.value, custom: '' });
-              }),
-            )}
-            {input(ENVELOPE.countInput, count, setCount)}
+              {label('Total coins', 'Split at random')}
+              {grid(GOLD_PRESETS, gold, setGold, true)}
 
-            {error ? (
-              <Text style={[styles.regular, { position: 'absolute', left: 0, right: 0, top: px(S.send.y - 26), fontSize: px(12), color: colors.white, textAlign: 'center' }]}>{error}</Text>
-            ) : null}
-            <Pressable
-              onPress={send}
-              style={[styles.chip, { left: px(S.send.x), top: px(S.send.y), width: px(S.send.width), height: px(S.send.height), borderRadius: px(S.send.radius), backgroundColor: colors.white }]}
-            >
-              <Text style={[styles.medium, { fontSize: px(S.send.size), color: S.send.color }]}>Send</Text>
-            </Pressable>
-          </>
-        )}
-      </View>
-    </View>
-  );
-}
+              <View style={{ height: px(8) }} />
+              {label('Number of envelopes', `Up to ${MAX_ENVELOPES}`)}
+              {grid(COUNT_PRESETS, count, setCount, false)}
 
-/** Group 1597881005 — Figma's copy, word for word. */
-const RULES: [string, boolean][] = [
-  ['Weekly Gift Contribution Event Rules', true],
-  ['', false],
-  ['1. Weekly Gift Contribution Value Task', true],
-  ['When the total gift contribution value in a room reaches the specified task target within a week, the Room Owner will receive a gold coin reward based on the achievement.', false],
-  ['', false],
-  ['2. Reward Distribution Time', true],
-  ['The weekly gold coin rewards will be automatically deposited into the Room Reward (Claimable Section) at 00:00 (GMT+3) every Monday.', false],
-  ['', false],
-  ['3. Gold Coin Claiming Conditions', true],
-  ['Claiming is allowed only on Monday, between 00:00 and 23:59 (GMT+3).', false],
-];
+              {/* What is about to happen, in one line. */}
+              <View style={[styles.center, { marginTop: px(8), paddingVertical: px(10), borderRadius: px(14), backgroundColor: 'rgba(0,0,0,0.22)' }]}>
+                <Text style={[styles.medium, { fontSize: px(14) }]}>
+                  {g > 0 && n > 0 && n <= g ? `${n} envelope${n === 1 ? '' : 's'} · about ${fmt(Math.floor(g / n))} coins each` : '—'}
+                </Text>
+                <Text style={[styles.regular, { marginTop: px(2), fontSize: px(11), opacity: 0.75 }]}>{`Unopened coins return to you after ${REFUND_MINUTES} min`}</Text>
+              </View>
 
-function RulesPanel() {
-  const { px } = useDesignScale();
-  const R = ENVELOPE.rules;
-  const top = R.y - ENVELOPE.sheet.y;
-  return (
-    <View style={{ position: 'absolute', left: 0, right: 0, top: px(top), bottom: 0, backgroundColor: colors.white, borderTopLeftRadius: px(R.radius), borderTopRightRadius: px(R.radius) }}>
-      <Centered cx={201} cy={R.title.centerY} size={R.title.size} width={200} style={[styles.medium, { color: colors.black }]}>Rules</Centered>
-      <Text style={{ position: 'absolute', left: px(R.body.x), top: px(R.body.y), width: px(R.body.width) }}>
-        {RULES.map(([line, bold], i) => (
-          <Text key={i} style={[bold ? styles.semiBold : styles.regular, { fontSize: px(R.body.size), lineHeight: px(R.body.size * 1.5), color: R.body.color }]}>
-            {line || ' '}
-            {i < RULES.length - 1 ? '\n' : ''}
-          </Text>
-        ))}
-      </Text>
+              <Text style={[styles.medium, { height: px(30), lineHeight: px(30), textAlign: 'center', fontSize: px(13), color: '#FFE58A' }]}>
+                {tried && problem ? problem : ''}
+              </Text>
+
+              <Pressable
+                onPress={send}
+                disabled={busy}
+                style={[styles.center, styles.row, { height: px(52), borderRadius: px(26), backgroundColor: colors.white, opacity: problem && tried ? 0.6 : 1 }]}
+              >
+                {busy ? (
+                  <ActivityIndicator color={SEND_RED} />
+                ) : (
+                  <>
+                    <Text style={[styles.semiBold, { fontSize: px(17), color: SEND_RED }]}>Send</Text>
+                    {g > 0 ? (
+                      <>
+                        <Image source={art.coin} style={{ width: px(18), height: px(18), marginLeft: px(8), marginRight: px(4) }} />
+                        <Text style={[styles.semiBold, { fontSize: px(17), color: SEND_RED }]}>{fmt(g)}</Text>
+                      </>
+                    ) : null}
+                  </>
+                )}
+              </Pressable>
+            </>
+          )}
+        </ScrollView>
+      </Animated.View>
     </View>
   );
 }
@@ -270,11 +328,15 @@ export function EnvelopeDrop({
     return () => { sway.stop(); breathe.stop(); };
   }, [drop, swing, glow]);
 
+  // The room re-renders all the time and hands a new onDone each time; holding it in a ref keeps
+  // `close` stable, so the auto-close timer below is not restarted on every render.
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
   const close = useCallback(() => {
     if (closing.current) return;
     closing.current = true;
-    Animated.timing(card, { toValue: 0, duration: 200, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(() => onDone());
-  }, [card, onDone]);
+    Animated.timing(card, { toValue: 0, duration: 200, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(() => onDoneRef.current());
+  }, [card]);
 
   // The result card leaves on its own after a moment; a tap anywhere closes it sooner.
   useEffect(() => {
@@ -356,7 +418,7 @@ export function EnvelopeDrop({
               ) : null}
             </View>
 
-            <Pressable onPress={open} style={[styles.center, { marginTop: px(14), height: px(34), paddingHorizontal: px(22), borderRadius: px(17), backgroundColor: GOLD }]}>
+            <Pressable onPress={open} style={[styles.center, { marginTop: px(26), height: px(34), paddingHorizontal: px(22), borderRadius: px(17), backgroundColor: GOLD }]}>
               <Text style={[styles.semiBold, { fontSize: px(14), color: RED }]}>{phase === 'opening' ? 'Opening…' : 'Tap to open'}</Text>
             </Pressable>
           </Animated.View>
@@ -391,6 +453,8 @@ export function EnvelopeDrop({
             {/* What you got — yours only. */}
             <Animated.View style={{ width: px(280), borderRadius: px(22), overflow: 'hidden', backgroundColor: RED, borderWidth: px(3), borderColor: GOLD, opacity: card, transform: [{ scale: cardScale }] }}>
               <Image source={art.popupBg} resizeMode="cover" style={{ position: 'absolute', left: 0, top: 0, width: px(280), height: px((280 * 1024) / 608) }} />
+              {/* Calms the burst's bright middle so the amount reads. */}
+              <LinearGradient colors={['rgba(165,27,34,0)', 'rgba(165,27,34,0.85)', RED]} locations={[0.22, 0.5, 0.75]} style={StyleSheet.absoluteFill} />
               <View style={{ alignItems: 'center', paddingTop: px(26), paddingBottom: px(24), paddingHorizontal: px(16) }}>
                 <Image source={avatarOf(envelope.sender)} resizeMode="cover" style={{ width: px(64), height: px(64), borderRadius: px(32), borderWidth: px(2), borderColor: GOLD }} />
                 <Text numberOfLines={1} style={[styles.medium, { marginTop: px(8), fontSize: px(14), opacity: 0.9 }]}>{`${name}’s red envelope`}</Text>
@@ -398,7 +462,7 @@ export function EnvelopeDrop({
                   <>
                     <View style={[styles.row, { marginTop: px(14) }]}>
                       <Image source={art.coin} resizeMode="cover" style={{ width: px(36), height: px(36), marginRight: px(8) }} />
-                      <Text style={[styles.semiBold, { fontSize: px(42), lineHeight: px(52), color: '#FFE58A' }]}>{`+${amount}`}</Text>
+                      <Text style={[styles.semiBold, { fontSize: px(42), lineHeight: px(52), color: '#FFE58A', textShadowColor: 'rgba(0,0,0,0.35)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 }]}>{`+${amount}`}</Text>
                     </View>
                     <Text style={[styles.medium, { fontSize: px(15) }]}>Coins</Text>
                     <Text style={[styles.regular, { marginTop: px(10), fontSize: px(12), opacity: 0.85 }]}>Credited to your account</Text>

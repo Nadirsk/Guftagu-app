@@ -249,13 +249,18 @@ export { Lock as LockGlyph };
 
 /** Mazag's "Tips" confirmation before the chat list is wiped. */
 export function ClearDialog({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
+  return <ConfirmDialog message="Confirm to delete all messages in the list" onCancel={onCancel} onConfirm={onConfirm} />;
+}
+
+/** Mazag's centred Cancel / Confirm card — "Will … set as administrator?", "… add to block list?". */
+export function ConfirmDialog({ title = 'Tips', message, onCancel, onConfirm }: { title?: string; message: string; onCancel: () => void; onConfirm: () => void }) {
   const { px } = useDesignScale();
   return (
     <View style={StyleSheet.absoluteFill}>
       <Pressable onPress={onCancel} style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.6)' }]} />
       <View style={{ position: 'absolute', left: px(30), right: px(30), top: px(330), borderRadius: px(18), backgroundColor: '#3B332F', paddingHorizontal: px(18), paddingTop: px(22), paddingBottom: px(20) }}>
         <Text style={{ textAlign: 'center', fontFamily: font.medium, fontSize: px(20), color: colors.white }}>Tips</Text>
-        <Text style={{ marginTop: px(18), textAlign: 'center', fontFamily: font.regular, fontSize: px(16), lineHeight: px(26), color: colors.white }}>Confirm to delete all messages in the list</Text>
+        <Text style={{ marginTop: px(18), textAlign: 'center', fontFamily: font.regular, fontSize: px(16), lineHeight: px(26), color: colors.white }}>{message}</Text>
         <View style={{ marginTop: px(22), flexDirection: 'row', gap: px(14) }}>
           <Pressable onPress={onCancel} style={{ flex: 1, height: px(44), borderRadius: px(22), borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontFamily: font.regular, fontSize: px(16), color: colors.white }}>Cancel</Text>

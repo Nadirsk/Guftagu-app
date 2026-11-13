@@ -34,8 +34,9 @@ type Rtc = {
   RTCSessionDescription: new (d: unknown) => unknown;
   RTCIceCandidate: new (c: unknown) => unknown;
 };
-type TrackLike = { enabled: boolean; stop: () => void };
-type MediaStreamLike = { getTracks: () => TrackLike[]; getAudioTracks: () => TrackLike[] };
+type TrackLike = { enabled: boolean; stop: () => void; kind?: string; _switchCamera?: () => void };
+/** `toURL` is what a react-native-webrtc `RTCView` takes as `streamURL`. */
+export type MediaStreamLike = { getTracks: () => TrackLike[]; getAudioTracks: () => TrackLike[]; getVideoTracks: () => TrackLike[]; toURL: () => string; id: string };
 type PeerLike = {
   addTrack: (t: TrackLike, s: MediaStreamLike) => void;
   createOffer: (o?: unknown) => Promise<SessionDescription>;
@@ -97,11 +98,18 @@ export type VoiceArgs = {
   iceServers: Ice[];
   /** Only listen and speak once the room has been joined. */
   ready: boolean;
+  /** A live video / Video Party: a seat carries a camera as well as a mic, and the streams are handed back. */
+  video?: boolean;
+  /** My camera is switched on (my seat's `camera_on`); the track stays, it just stops sending pictures. */
+  cameraOn?: boolean;
 };
 
-export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = false, speakerOff, iceServers, ready }: VoiceArgs) {
+export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = false, speakerOff, iceServers, ready, video = false, cameraOn = false }: VoiceArgs) {
   const [speaking, setSpeaking] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<'off' | 'unavailable' | 'live' | 'denied'>('off');
+  /** Video rooms only: my own camera stream, and what each person on a seat is sending, by uuid. */
+  const [localStream, setLocalStream] = useState<MediaStreamLike | null>(null);
+  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStreamLike>>({});
 
   const iAmSeated = seated.some((s) => s.uuid === meUuid);
   const publishers = seated.map((s) => s.uuid).filter((u) => u !== meUuid);
@@ -116,8 +124,8 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = f
   const deferred = useRef(new Set<string>());
   const members = useRef(new Set<string>());
   const knownPublishers = useRef(new Set<string>());
-  const latest = useRef({ micOpen, musicOn, speakerOff, iceServers, meUuid, publishers, iAmSeated });
-  latest.current = { micOpen, musicOn, speakerOff, iceServers, meUuid, publishers, iAmSeated };
+  const latest = useRef({ micOpen, musicOn, speakerOff, iceServers, meUuid, publishers, iAmSeated, video, cameraOn });
+  latest.current = { micOpen, musicOn, speakerOff, iceServers, meUuid, publishers, iAmSeated, video, cameraOn };
 
   const whisper = (event: string, payload: object) => {
     try {
@@ -134,6 +142,12 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = f
     peers.current.delete(who);
     queued.current.delete(who);
     deferred.current.delete(who);
+    setRemoteStreams((prev) => {
+      if (!(who in prev)) return prev;
+      const next = { ...prev };
+      delete next[who];
+      return next;
+    });
   };
 
   const closeAll = () => [...peers.current.keys()].forEach(closePeer);
@@ -142,7 +156,8 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = f
   const applySpeaker = () => {
     peers.current.forEach((pc) =>
       pc.getReceivers?.().forEach((r) => {
-        if (r.track) r.track.enabled = !latest.current.speakerOff;
+        // The speaker switch is about sound: a muted room still shows its pictures.
+        if (r.track && r.track.kind !== 'video') r.track.enabled = !latest.current.speakerOff;
       }),
     );
   };
@@ -155,6 +170,31 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = f
     for (const c of pending) await pc.addIceCandidate(new lib.RTCIceCandidate(c)).catch(() => undefined);
   };
 
+  /**
+   * Lets a video sender use a high bitrate (WebRTC's default is a few hundred kbps, which looks soft) and keep
+   * resolution rather than frame-rate when the line is short. The budget is shared: with more people each gets less,
+   * since a mesh uploads one copy per person. Parameters can only be set once the connection has encodings, so this
+   * is tried again when the connection comes up.
+   */
+  const tuneVideo = (pc: PeerLike) => {
+    const senders = (pc as unknown as { getSenders?: () => { track?: TrackLike | null; getParameters: () => any; setParameters: (p: unknown) => Promise<void> }[] }).getSenders?.() ?? []; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const share = Math.max(1, peers.current.size);
+    const bitrate = Math.max(600_000, Math.min(2_500_000, Math.floor(3_000_000 / share)));
+    senders.forEach((sender) => {
+      if (sender.track?.kind !== 'video') return;
+      try {
+        const params = sender.getParameters();
+        params.encodings = params.encodings?.length ? params.encodings : [{}];
+        params.encodings[0].maxBitrate = bitrate;
+        params.encodings[0].maxFramerate = 30;
+        params.degradationPreference = 'maintain-resolution';
+        sender.setParameters(params).catch(() => undefined);
+      } catch {
+        /* not ready yet: the connection event below tries again */
+      }
+    });
+  };
+
   /** A connection to `who`. If I am seated it carries my mic, which is what triggers the offer. */
   const createPeer = (who: string): PeerLike | null => {
     const lib = loadRtc();
@@ -162,6 +202,7 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = f
     const pc = new lib.RTCPeerConnection({ iceServers: latest.current.iceServers });
     const stream = local.current;
     stream?.getTracks().forEach((t) => pc.addTrack(t, stream));
+    tuneVideo(pc);
     log('peer created for', who, 'sending:', Boolean(stream));
 
     const negotiate = () => {
@@ -181,10 +222,16 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = f
     pc.addEventListener('icecandidate', (e: { candidate?: { toJSON?: () => unknown } | null }) => {
       if (e.candidate) signal(who, 'ice', e.candidate.toJSON?.() ?? e.candidate);
     });
-    pc.addEventListener('iceconnectionstatechange', () => log('ICE with', who, pc.iceConnectionState));
-    pc.addEventListener('track', () => {
-      log('audio track from', who);
+    pc.addEventListener('iceconnectionstatechange', () => {
+      log('ICE with', who, pc.iceConnectionState);
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') tuneVideo(pc);
+    });
+    pc.addEventListener('track', (e: { streams?: MediaStreamLike[] }) => {
+      log('track from', who);
       applySpeaker();
+      // A video room hands the picture to the screen; a voice room only ever plays sound.
+      const incoming = e.streams?.[0];
+      if (latest.current.video && incoming) setRemoteStreams((prev) => (prev[who] === incoming ? prev : { ...prev, [who]: incoming }));
     });
     pc.addEventListener('connectionstatechange', () => {
       if (['failed', 'closed'].includes(pc.connectionState) && peers.current.get(who) === pc) peers.current.delete(who);
@@ -293,13 +340,20 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = f
     // react-native-webrtc does not ask for the microphone itself on Android.
     const allowed =
       Platform.OS === 'android'
-        ? PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO).then((r) => r === PermissionsAndroid.RESULTS.GRANTED)
+        ? PermissionsAndroid.requestMultiple(
+            latest.current.video
+              ? [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, PermissionsAndroid.PERMISSIONS.CAMERA]
+              : [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO],
+          ).then((r) => Object.values(r).every((v) => v === PermissionsAndroid.RESULTS.GRANTED))
         : Promise.resolve(true);
 
     allowed
       .then((ok) => {
         if (!ok) throw new Error('microphone permission denied');
-        return lib.mediaDevices.getUserMedia({ audio: true, video: false });
+        return lib.mediaDevices.getUserMedia({
+          audio: true,
+          video: latest.current.video ? { facingMode: 'user', width: 1280, height: 720, frameRate: 30 } : false,
+        });
       })
       .then((stream) => {
         if (cancelled) {
@@ -308,11 +362,18 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = f
         }
         local.current = stream;
         stream.getAudioTracks().forEach((t) => (t.enabled = latest.current.micOpen || latest.current.musicOn));
+        if (latest.current.video) {
+          stream.getVideoTracks().forEach((t) => (t.enabled = latest.current.cameraOn));
+          setLocalStream(stream);
+        }
         log('publishing');
         setStatus('live');
         // Anything open so far was receive-only: put my mic on it. Adding a track fires
         // `negotiationneeded`, which sends a fresh offer on that same connection.
-        peers.current.forEach((pc) => stream.getTracks().forEach((t) => pc.addTrack(t, stream)));
+        peers.current.forEach((pc) => {
+          stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+          tuneVideo(pc);
+        });
         callEveryone();
       })
       .catch((e) => {
@@ -324,6 +385,7 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = f
       cancelled = true;
       local.current?.getTracks().forEach((t) => t.stop());
       local.current = null;
+      setLocalStream(null);
       whisper('speaking', { uuid: latest.current.meUuid, speaking: false });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -354,6 +416,14 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = f
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [micOpen, musicOn]);
+
+  // ---- camera on / off: the track stays on the connection, it just stops carrying pictures
+  useEffect(() => {
+    local.current?.getVideoTracks().forEach((t) => (t.enabled = cameraOn));
+  }, [cameraOn]);
+
+  /** Front <-> back camera (react-native-webrtc's own switch on the live video track). */
+  const switchCamera = () => local.current?.getVideoTracks().forEach((t) => t._switchCamera?.());
 
   useEffect(applySpeaker, [speakerOff]);
 
@@ -391,5 +461,5 @@ export function useVoice({ roomUuid, token, meUuid, seated, micOpen, musicOn = f
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, iAmSeated, micOpen, musicOn, meUuid]);
 
-  return { speaking, status };
+  return { speaking, status, localStream, remoteStreams, switchCamera };
 }

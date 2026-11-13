@@ -20,11 +20,11 @@ import { colors, typography } from '../../theme/tokens';
 import { LevelBadges } from '../level/LevelBadge';
 import { MicWave, NineSlice, ProfileCardSheet } from './Cosmetics';
 import { EnteringOverlay, EntranceBanner } from './EntryEffects';
-import { ActionPill, AnnouncementDialog, BottomBar, ChatBar, ClearDialog, type ChatTab, HostMenu, type HostMenuKey, LockGlyph, PowerOverlay, TopRoomPill, ViewersPill } from './RoomChrome';
-import { SeatMenu } from './SeatMenu';
+import { ActionPill, AnnouncementDialog, BottomBar, ChatBar, ClearDialog, ConfirmDialog, type ChatTab, HostMenu, type HostMenuKey, LockGlyph, PowerOverlay, TopRoomPill, ViewersPill } from './RoomChrome';
+import { ListenersSheet, SeatActionSheet, SeatMenu } from './SeatMenu';
 import { CASUAL_FACES, CasualBubble, Composer, EmojiSheet } from './EmojiSheet';
 import { emojiSource } from '../../assets/room/emoji';
-import { ComboButton, GiftFx } from './GiftFx';
+import { GiftFx } from './GiftFx';
 import { LuckyWheelSheet } from './wheel';
 import { EnvelopeDrop, EnvelopeSheet } from './envelope';
 import {
@@ -62,6 +62,13 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 const YELLOW = '#FEDE0F';
 const SEAT_PINK = '#FFC3DD';
+/** VIP seats: the same seat, highlighted in gold. */
+const SEAT_GOLD = '#F7C548';
+/** The seat ring with its fill, stroke and glow turned gold, for VIP seats. */
+const GOLD_SEAT_RING = icons.seatRing
+  .replace('fill="#4D2242"', 'fill="#6B4A0E"')
+  .replace('stroke="#FFFEDB"', 'stroke="#FFD45C"')
+  .replace('values="0 0 0 0 1 0 0 0 0 0.997596 0 0 0 0 0.971154 0 0 0 0.25 0"', 'values="0 0 0 0 1 0 0 0 0 0.78 0 0 0 0 0.22 0 0 0 0.6 0"');
 const SEAT_LIFT = -82;
 const DEFAULT_NOTICE =
   'Welcome to Guftagu, Please comply with platform user regulations, chat with others politely and wish you have a pleasant time here.';
@@ -76,6 +83,13 @@ type Overlay =
   | { kind: 'tools' }
   | { kind: 'kickout'; user: RoomUser }
   | { kind: 'seatMenu' }
+  | { kind: 'hostSeatMenu'; seat: Seat }
+  /** The owner's or an admin's own seat: Mazag's five rows, Mute / UnMute the Mic among them. */
+  | { kind: 'hostOwnSeat'; seat: Seat }
+  | { kind: 'confirm'; message: string; onConfirm: () => void }
+  /** The owner tapped an empty or locked seat: Take on / Mute / Lock / Move to this seat. */
+  | { kind: 'emptySeat'; seat: Seat }
+  | { kind: 'listeners'; seat: Seat }
   | { kind: 'profileCard'; user: RoomUser }
   | { kind: 'gifts'; receiver: RoomUser | 'all' | null }
   | { kind: 'music' }
@@ -156,7 +170,6 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
   const [seatMode, setSeatMode] = useState<SeatMode>(null);
   const [chatTab, setChatTab] = useState<ChatTab>('All');
   const [chatOpen, setChatOpen] = useState(false);
-  const [combo, setCombo] = useState<{ giftId: number; target: RoomUser | 'all'; run: number } | null>(null);
   const [draft, setDraft] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [composer, setComposer] = useState<null | 'keys' | 'grid'>(null);
@@ -184,10 +197,36 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
   useEffect(() => {
     if (!room.fatal) return;
     leftRef.current = true;
+    if (room.kicked) {
+      // Kicked out or blocked by the owner / an admin: the room closes at once and you land on
+      // Party, where the alert says who did it and for how long.
+      session.end();
+      navigation.navigate('Tabs', { tab: 'Party', at: Date.now() });
+      Alert.alert('Removed from room', room.fatal);
+      return;
+    }
     Alert.alert('Room', room.fatal, [{ text: 'OK', onPress: () => { session.end(); navigation.goBack(); } }]);
-  }, [navigation, room.fatal]);
+  }, [navigation, room.fatal, room.kicked]);
+
+  // Put on a mic by the owner or an admin: a short toast (no popup), the mic stays off until you turn it on.
+  useEffect(() => {
+    if (!room.placedOnMic) return;
+    toast.show("You're on the mic. Your microphone is off, tap the mic to speak.");
+    room.clearPlacedOnMic();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room.placedOnMic]);
+
+  // Notices meant for you alone (made an admin, chat muted…) arrive on the socket.
+  useEffect(() => {
+    if (!room.notice) return;
+    toast.show(room.notice);
+    room.clearNotice();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room.notice]);
 
   const isHost = snapshot?.my.is_host ?? false;
+  // The room's owner — not a co-host. Only the owner sees the Tools that change the room or seats.
+  const isOwner = !!snapshot?.owner && snapshot.owner.uuid === room.me?.uuid;
   const me = room.me;
   const seats = snapshot?.seats ?? [];
   const mySeat = seats.find((x) => x.user?.uuid === me?.uuid) ?? null;
@@ -213,7 +252,8 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
         await work();
         if (done) toast.show(done);
       } catch (e) {
-        toast.show(e instanceof ApiError ? e.displayMessage : 'Something went wrong');
+        // Mazag prefixes what the server turned down with "Failed:".
+        toast.show(e instanceof ApiError ? `Failed:${e.displayMessage}` : 'Something went wrong');
       }
     },
     [toast],
@@ -248,6 +288,11 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
       return;
     }
 
+    // Mazag: the owner tapping an empty or locked seat gets its sheet instead of sitting down.
+    if (isOwner && !seat.user) {
+      setOverlay({ kind: 'emptySeat', seat });
+      return;
+    }
     if (seat.locked) {
       if (isHost) run(() => room.lockSeat(seat.seat_number, false), 'Seat unlocked');
       else toast.show('This seat is locked by the host');
@@ -259,7 +304,8 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
       return;
     }
     if (mine) {
-      setOverlay({ kind: 'seatMenu' });
+      // The owner and admins get Mazag's own-seat sheet (Mute / UnMute the Mic, Leave the Mic…).
+      setOverlay(isHost ? { kind: 'hostOwnSeat', seat } : { kind: 'seatMenu' });
       return;
     }
     const user = seat.user;
@@ -268,14 +314,8 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
       setOverlay({ kind: 'profileCard', user });
       return;
     }
-    Alert.alert(user.display_name ?? 'Guftagu user', undefined, [
-      { text: 'View profile card', onPress: () => setOverlay({ kind: 'profileCard', user }) },
-      { text: 'Send a gift', onPress: () => setOverlay({ kind: 'gifts', receiver: user }) },
-      { text: seat.muted ? 'Unmute' : 'Mute', onPress: () => run(() => room.muteSeat(seat.seat_number, !seat.muted), seat.muted ? 'Unmuted' : 'Muted') },
-      { text: 'Remove from mic', onPress: () => run(() => room.removeFromSeat(seat.seat_number), 'Removed from mic') },
-      { text: 'Kick out', style: 'destructive', onPress: () => setOverlay({ kind: 'kickout', user }) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    // The owner / an admin gets the same bottom sheet, with the seat's moderation rows added.
+    setOverlay({ kind: 'hostSeatMenu', seat });
   };
 
   const onTool = (key: ToolKey) => {
@@ -286,16 +326,16 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
     } else if (key === 'music') {
       setOverlay({ kind: 'music' });
     } else if (key === 'mode' || key === 'theme') {
-      if (!isHost) {
-        toast.show('Only the host can do that');
+      if (!isOwner) {
+        toast.show('Only the room owner can do that');
         return;
       }
       setOverlay({ kind: key });
     } else if (key === 'redPacket') {
       setOverlay({ kind: 'envelope' });
     } else if (key === 'kick' || key === 'mute' || key === 'lock') {
-      if (!isHost) {
-        toast.show('Only the host can do that');
+      if (!isOwner) {
+        toast.show('Only the room owner can do that');
         return;
       }
       setOverlay(null);
@@ -563,23 +603,6 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
           return snapshot?.owner?.uuid === uuid ? { x: 35, y: 59 } : null;
         }}
       />
-      {combo ? (
-        <ComboButton
-          runKey={combo.run}
-          top={CONTROLS.input.y + extra - 96}
-          onExpire={() => setCombo(null)}
-          onPress={() => {
-            const c = combo;
-            setCombo({ ...c, run: Date.now() });
-            run(() => room.sendGift(c.giftId, c.target === 'all' ? 'all' : c.target.uuid, 1));
-          }}
-          onQuantity={(n) => {
-            const c = combo;
-            setCombo({ ...c, run: Date.now() });
-            run(() => room.sendGift(c.giftId, c.target === 'all' ? 'all' : c.target.uuid, n));
-          }}
-        />
-      ) : null}
       {/* ------------------------------------------------ bottom bar */}
       <View style={{ position: 'absolute', left: px(12), right: px(12), top: px(CONTROLS.input.y + extra - 2), }}>
         <BottomBar
@@ -671,6 +694,117 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
           }}
         />
       ) : null}
+      {overlay?.kind === 'hostSeatMenu' && overlay.seat.user ? (() => {
+        // Read the seat fresh from the snapshot, so a role or mute changed meanwhile shows right.
+        const seat = seats.find((s) => s.seat_number === overlay.seat.seat_number && s.user?.uuid === overlay.seat.user?.uuid) ?? overlay.seat;
+        const user = overlay.seat.user;
+        const name = user.display_name ?? 'Guftagu user';
+        const isAdmin = seat.role === 'co_host';
+        const close = () => setOverlay(null);
+        const ask = (message: string, work: () => Promise<unknown>, done: string) =>
+          setOverlay({ kind: 'confirm', message, onConfirm: () => { setOverlay(null); run(work, done); } });
+        const gift = { label: 'Send gift', onPress: () => setOverlay({ kind: 'gifts', receiver: user }) };
+        const profile = { label: 'View profile card', onPress: () => setOverlay({ kind: 'profileCard', user }) };
+        // An admin tapping the owner or another admin: only these.
+        if (!isOwner && (seat.role === 'owner' || isAdmin)) {
+          return <SeatActionSheet title={name} onClose={close} rows={[gift, profile]} />;
+        }
+
+        return (
+          <SeatActionSheet
+            title={name}
+            onClose={close}
+            rows={[
+              gift,
+              profile,
+              { label: 'Take down the Mic', onPress: () => { close(); run(() => room.removeFromSeat(seat.seat_number), 'Taken down from the mic'); } },
+              {
+                label: seat.muted ? 'UnMute the Mic' : 'Mute the Mic',
+                onPress: () => { close(); run(() => room.muteSeat(seat.seat_number, !seat.muted), seat.muted ? 'Unmuted' : 'Muted'); },
+              },
+              { label: 'Kick out of the room', onPress: () => setOverlay({ kind: 'kickout', user }) },
+              // Only the owner appoints admins.
+              ...(isOwner
+                ? [{
+                    label: isAdmin ? 'UnSet as room admin' : 'Set as room admin',
+                    onPress: () => isAdmin
+                      ? ask(`Do you want to cancel the admin status of ${name}?`, () => room.setAdmin(user.uuid, false), 'Admin removed')
+                      : ask(`Will ${name} be set as room admin?`, () => room.setAdmin(user.uuid, true), `${name} is now an admin`),
+                  }]
+                : []),
+              {
+                label: 'Add to block list',
+                danger: true,
+                onPress: () => ask(`Add ${name} to the block list? They will not be able to enter this room again.`, () => room.block(user.uuid), 'Added to block list'),
+              },
+            ]}
+          />
+        );
+      })() : null}
+      {overlay?.kind === 'hostOwnSeat' ? (() => {
+        // The owner's or an admin's own seat. "UnMute the Mic" lifts both your own mute and one
+        // the owner put on this seat (an admin may do that for their own seat).
+        const seat = seats.find((s) => s.seat_number === overlay.seat.seat_number) ?? overlay.seat;
+        const mineUser = seat.user;
+        const close = () => setOverlay(null);
+        return (
+          <SeatActionSheet
+            onClose={close}
+            rows={[
+              { label: 'View profile card', onPress: () => setOverlay(mineUser ? { kind: 'profileCard', user: mineUser } : null) },
+              { label: 'Leave the Mic', danger: true, onPress: () => { close(); run(() => room.leaveSeat()); } },
+              {
+                label: seat.muted ? 'UnMute the Mic' : 'Mute the Mic',
+                onPress: () => {
+                  close();
+                  if (!seat.muted) {
+                    run(() => room.setMic(true), 'Mic off');
+                    return;
+                  }
+                  run(async () => {
+                    if (snapshot?.my.muted) await room.setMic(false);
+                    await room.muteSeat(seat.seat_number, false);
+                  }, 'Mic on');
+                },
+              },
+              { label: 'Send gift', onPress: () => setOverlay({ kind: 'gifts', receiver: giftReceiver() }) },
+            ]}
+          />
+        );
+      })() : null}
+      {overlay?.kind === 'emptySeat' ? (() => {
+        const seat = seats.find((s) => s.seat_number === overlay.seat.seat_number) ?? overlay.seat;
+        const n = seat.seat_number;
+        const close = () => setOverlay(null);
+        return (
+          <SeatActionSheet
+            onClose={close}
+            rows={[
+              { label: 'Take on the Mic', onPress: () => setOverlay({ kind: 'listeners', seat }) },
+              { label: seat.muted ? 'UnMute the Mic' : 'Mute the Mic', onPress: () => { close(); run(() => room.muteSeat(n, !seat.muted), seat.muted ? 'Unmuted' : 'Muted'); } },
+              { label: seat.locked ? 'UnLock the Mic' : 'Lock the Mic', onPress: () => { close(); run(() => room.lockSeat(n, !seat.locked), seat.locked ? 'Seat unlocked' : 'Seat locked'); } },
+              // A locked seat has no "Move to this seat" (Mazag): unlock it first.
+              ...(seat.locked ? [] : [{ label: 'Move to this seat', onPress: () => { close(); run(() => room.takeSeat(n)); } }]),
+            ]}
+          />
+        );
+      })() : null}
+      {overlay?.kind === 'listeners' ? (
+        <ListenersSheet
+          seatNumber={overlay.seat.seat_number}
+          load={room.listeners}
+          version={room.roster}
+          onClose={() => setOverlay(null)}
+          onTakeOn={(u) => {
+            const n = overlay.seat.seat_number;
+            setOverlay(null);
+            run(() => room.invite(n, u.uuid), `${u.display_name ?? 'User'} is on seat ${n}`);
+          }}
+        />
+      ) : null}
+      {overlay?.kind === 'confirm' ? (
+        <ConfirmDialog message={overlay.message} onCancel={() => setOverlay(null)} onConfirm={overlay.onConfirm} />
+      ) : null}
       {overlay?.kind === 'seatMenu' ? (
         <SeatMenu
           onClose={() => setOverlay(null)}
@@ -705,15 +839,28 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
             setOverlay(null);
             run(() => api(`/users/${who}/follow`, { method: 'POST', token }), 'Followed');
           }}
+          onMyProfile={() => {
+            setOverlay(null);
+            // Pop back to the shell (navigate would push a second shell over the room in
+            // React Navigation 7): the room is removed, which minimises it to the floating pill.
+            navigation.popTo('Tabs', { tab: 'Mine', at: Date.now() });
+          }}
+          onReport={() => {
+            const peer = overlay.user;
+            setOverlay(null);
+            navigation.navigate('Report', { userUuid: peer.uuid, peer: { uuid: peer.uuid, display_name: peer.display_name, avatar_url: peer.avatar_url } as ChatUser });
+          }}
         /> : null}
       {overlay?.kind === 'leave' ? <LeaveDialog busy={leaving} onCancel={() => setOverlay(null)} onConfirm={leave} /> : null}
-      {overlay?.kind === 'tools' ? <ToolsSheet extra={extra} onClose={() => setOverlay(null)} onPick={onTool} /> : null}
+      {overlay?.kind === 'tools' ? <ToolsSheet extra={extra} owner={isOwner} onClose={() => setOverlay(null)} onPick={onTool} /> : null}
       {overlay?.kind === 'wheel' ? (
         <LuckyWheelSheet
+          roomUuid={params.uuid}
           onClose={() => setOverlay(null)}
-          // Section 575:3421 has no server side yet: no spins, prizes or recharge to call.
-          onSpin={() => toast.show('Coming soon')}
-          onRecharge={() => toast.show('Coming soon')}
+          onRecharge={() => {
+            setOverlay(null);
+            navigation.navigate('Wallet', { tab: 'coin' });
+          }}
         />
       ) : null}
       {overlay?.kind === 'envelope' && me ? (
@@ -773,7 +920,6 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
                 local: true,
               })),
             );
-            setCombo({ giftId: gift.id, target: targets === 'all' ? 'all' : targets[0], run: Date.now() });
             setOverlay(null);
             (targets === 'all' ? room.sendGift(gift.id, 'all', quantity).then(() => undefined) : Promise.all(targets.map((t) => room.sendGift(gift.id, t.uuid, quantity))).then(() => undefined)).catch((e) =>
               toast.show(e instanceof Error ? e.message : 'Could not send that gift.'),
@@ -824,11 +970,11 @@ function SeatView({ seat, spot, mine, picking, speaking, invite, onPress }: { se
   const { px } = useDesignScale();
   // Every part of a seat is Figma's 47.053 one, scaled to this layout's ring.
   const k = spot.ring / SEAT.ring;
-  const ring = seat.is_vip ? SEAT.vipRingSvg : SEAT.ringSvg;
+  // A VIP seat is the same seat as every other, highlighted in gold (ring, glow, chair, padlock).
+  const ring = SEAT.ringSvg;
+  const tint = seat.is_vip ? SEAT_GOLD : SEAT_PINK;
   const face = spot.ring - 4 * k;
   const labelWidth = Math.max(SEAT.label.width, spot.ring + 26 * k);
-  // An empty locked or VIP seat is a glass disc (locked: pale, VIP: gold-rimmed), not the pink ring.
-  const glass = !seat.user && (seat.locked || seat.is_vip);
 
   return (
     <>
@@ -841,11 +987,9 @@ function SeatView({ seat, spot, mine, picking, speaking, invite, onPress }: { se
         )
       ) : null}
       {invite ? <InviteHint x={spot.x} y={spot.y} size={spot.ring} /> : null}
-      {glass ? null : (
-        <View pointerEvents="none" style={{ position: 'absolute', left: px(spot.x + ring.dx * k), top: px(spot.y + ring.dy * k), opacity: picking ? 0.75 : 1 }}>
-          <SvgXml xml={seat.is_vip ? icons.seatRingVip : icons.seatRing} width={px(ring.size * k)} height={px(ring.size * k)} />
-        </View>
-      )}
+      <View pointerEvents="none" style={{ position: 'absolute', left: px(spot.x + ring.dx * k), top: px(spot.y + ring.dy * k), opacity: picking ? 0.75 : 1 }}>
+        <SvgXml xml={seat.is_vip ? GOLD_SEAT_RING : icons.seatRing} width={px(ring.size * k)} height={px(ring.size * k)} />
+      </View>
       <Pressable
         onPress={onPress}
         style={{ position: 'absolute', left: px(spot.x), top: px(spot.y), width: px(spot.ring), height: px(spot.ring), borderRadius: px(spot.ring / 2), alignItems: 'center', justifyContent: 'center' }}
@@ -860,20 +1004,15 @@ function SeatView({ seat, spot, mine, picking, speaking, invite, onPress }: { se
             animate
           />
         ) : seat.locked ? (
-          // Mazag's own locked-seat disc.
-          <Image source={require('../../assets/room/mz/seat-lock.png')} style={{ width: px(spot.ring), height: px(spot.ring), opacity: picking ? 0.75 : 1 }} />
-        ) : seat.is_vip ? (
-          // Mazag's VIP seat: its glass chair disc under the gold ring frame.
-          <View style={{ width: px(spot.ring), height: px(spot.ring), alignItems: 'center', justifyContent: 'center', opacity: picking ? 0.75 : 1 }}>
-            <Image source={require('../../assets/room/mz/seat-empty.png')} style={{ position: 'absolute', width: px(spot.ring), height: px(spot.ring), tintColor: '#F2C14E' }} />
-            <Image source={require('../../assets/room/mz/vip-ring-10.png')} style={{ position: 'absolute', width: px(spot.ring * 1.04), height: px(spot.ring * 1.04) }} />
-          </View>
+          // Same pink seat; only the chair glyph is swapped for Mazag's round padlock.
+          <Image source={require('../../assets/room/mz/seat-lock-glyph.png')} style={{ width: px(spot.ring * 0.36), height: px(spot.ring * 0.36), opacity: picking ? 0.75 : 1, tintColor: seat.is_vip ? SEAT_GOLD : undefined }} />
         ) : (
           // Centred in the ring, as Figma renders it — the export's (3, 2) mask offset
           // inside the Seat box reads as off-centre once drawn literally.
-          <SvgXml xml={seat.is_vip ? icons.seatVip : icons.seat} color={SEAT_PINK} width={px(SEAT.glyph.width * k)} height={px(SEAT.glyph.height * k)} />
+          <SvgXml xml={icons.seat} color={tint} width={px(SEAT.glyph.width * k)} height={px(SEAT.glyph.height * k)} />
         )}
-        {seat.user && seat.muted ? (
+        {/* The owner's mute stays on the seat, so an empty seat shows it too. */}
+        {seat.muted ? (
           <View style={{ position: 'absolute', right: px(-2), bottom: px(-2), width: px(16 * k), height: px(16 * k), borderRadius: px(8 * k), backgroundColor: '#BD2727', alignItems: 'center', justifyContent: 'center' }}>
             <SvgXml xml={icons.toolMute.replace(/stroke="[^"]*"/g, 'stroke="white"')} width={px(11 * k)} height={px(11 * k)} />
           </View>
@@ -1133,7 +1272,10 @@ function ControlButton({ x, y, xml, color, onPress }: { x: number; y: number; xm
   );
 }
 
-/** A one-line notice over the room; nothing in the frame says how these look. */
+/**
+ * A one-line notice over the room, drawn like Mazag's: plain white system-font text on a faint
+ * dark rounded backdrop, centred on the screen ("Failed:This mic slot is for VIPs only.").
+ */
 function useToast() {
   const { px } = useDesignScale();
   const [text, setText] = useState<string | null>(null);
@@ -1157,9 +1299,9 @@ function useToast() {
   }, []);
 
   const node = text ? (
-    <Animated.View pointerEvents="none" style={{ position: 'absolute', left: px(40), right: px(40), top: px(185), alignItems: 'center', opacity }}>
-      <View style={{ paddingHorizontal: px(14), paddingVertical: px(8), borderRadius: px(18), backgroundColor: 'rgba(0,0,0,0.75)' }}>
-        <Text style={[styles.regular, { fontSize: px(12), color: colors.white, textAlign: 'center' }]}>{text}</Text>
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', paddingHorizontal: px(30), opacity }]}>
+      <View style={{ maxWidth: '90%', marginTop: px(40), paddingHorizontal: px(16), paddingVertical: px(10), borderRadius: px(8), backgroundColor: 'rgba(0,0,0,0.6)' }}>
+        <Text style={{ fontSize: px(15), lineHeight: px(21), color: colors.white, textAlign: 'center' }}>{text}</Text>
       </View>
     </Animated.View>
   ) : null;
