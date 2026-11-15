@@ -272,16 +272,21 @@ export function RoomDrawer({
 
 // ---------------------------------------------------------------- 280:5181
 
-export type ToolKey = 'clear' | 'theme' | 'mode' | 'sound' | 'music' | 'kick' | 'mute' | 'lock' | 'redPacket' | 'luckyDraw' | 'luckyNumber' | 'pk';
+export type ToolKey = 'clear' | 'theme' | 'mode' | 'sound' | 'music' | 'kick' | 'mute' | 'lock' | 'redPacket' | 'luckyDraw' | 'luckyNumber' | 'pk' | 'videos';
 
 /**
  * The tools in Figma's order, three to a row. `owner` ones change the room or other people
  * (theme, layout, seats, removing someone) and only the room's owner sees them; the rest —
  * clearing your own chat view, music — are for everyone. Rows close up when some are hidden.
  */
-const TOOL_LIST: { key: ToolKey; label: string; xml: string; size: number; icon: number; owner: boolean }[] = [
+/** Tools → Videos: a screen with a play triangle, in the other tools' dark-on-white line style. */
+const TOOL_VIDEOS_ICON = `<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="7" width="28" height="20" rx="4" stroke="#1C1C1C" stroke-width="2.4"/><path d="M15 12.5v9l7.5-4.5-7.5-4.5Z" fill="#1C1C1C"/><path d="M12 31h12" stroke="#1C1C1C" stroke-width="2.4" stroke-linecap="round"/></svg>`;
+
+const TOOL_LIST: { key: ToolKey; label: string; xml: string; size: number; icon: number; owner: boolean; hideInCinema?: boolean }[] = [
   { key: 'clear', label: 'Clear chat', xml: icons.toolBrush, size: 17, icon: 39, owner: false },
-  { key: 'theme', label: 'Room Theme', xml: icons.toolTheme, size: 16, icon: 36, owner: true },
+  { key: 'videos', label: 'Videos', xml: TOOL_VIDEOS_ICON, size: 16, icon: 36, owner: true },
+  // Ziigo hides Room Theme in a cinema room: the theatre skin is the room's look there.
+  { key: 'theme', label: 'Room Theme', xml: icons.toolTheme, size: 16, icon: 36, owner: true, hideInCinema: true },
   // 280:5055 puts Room Mode where Sound Effect was (that one only ever said "Coming soon").
   { key: 'mode', label: 'Room Mode', xml: icons.toolHouse, size: 16, icon: 39, owner: true },
   { key: 'music', label: 'Music', xml: icons.toolMusic, size: 17, icon: 36, owner: false },
@@ -299,10 +304,10 @@ const PK = { centerX: 69.5, dy: 133, width: 73, height: 83 };
 /** Sheet-relative bottom of everything, PK included, plus a margin under it. */
 const TOOLS_CONTENT_BOTTOM = TOOLS.games.redPacket.y + PK.dy + PK.height + 26;
 
-export function ToolsSheet({ extra, owner, onClose, onPick }: { extra: number; owner: boolean; onClose: () => void; onPick: (key: ToolKey) => void }) {
+export function ToolsSheet({ extra, owner, cinema = false, onClose, onPick }: { extra: number; owner: boolean; cinema?: boolean; onClose: () => void; onPick: (key: ToolKey) => void }) {
   const { px, ratio } = useDesignScale();
   const { height: winH } = useWindowDimensions();
-  const tools = TOOL_LIST.filter((t) => owner || !t.owner);
+  const tools = TOOL_LIST.filter((t) => (owner || !t.owner) && !(cinema && t.hideInCinema));
   const rows = Math.ceil(tools.length / 3);
   // Rows nobody sees come off the top of the sheet; Games moves up by as much.
   const lift = TOOL_ROW_YS[TOOL_ROW_YS.length - 1] - TOOL_ROW_YS[rows - 1];

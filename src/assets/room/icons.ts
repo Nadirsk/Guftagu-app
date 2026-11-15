@@ -406,4 +406,3 @@ export const closeM3 = `<svg width="24" height="24" viewBox="0 -960 960 960" xml
 export const themePlus = `<svg width="31" height="31" viewBox="0 0 31 31" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M10.75 2V9.75H3V12.3333H10.75V20.0833H13.3333V12.3333H21.0833V9.75H13.3333V2H10.75Z" fill="#BD8AB0"/>
 </svg>`;
-

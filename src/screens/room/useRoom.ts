@@ -41,6 +41,28 @@ export type Seat = {
   role?: 'owner' | 'co_host' | 'listener' | null;
 };
 
+/** Cinema mode, as `Room::videoState()` sends it (state snapshot and the `room.video` broadcast). */
+export type RoomVideo = {
+  /** Cinema mode is on: the room shows the YouTube stage and the theatre skin. */
+  on: boolean;
+  /** The YouTube id, or null while nothing is loaded. */
+  id: string | null;
+  title: string | null;
+  state: 'playing' | 'paused' | 'stopped';
+  /** Seconds into the video at `updated_at`; while playing, add the time since then. */
+  position: number;
+  updated_at: string | null;
+  /** The server's clock when this was sent. */
+  now?: string;
+};
+
+/** Where the room's player is right now, from the shared state (server clock on both sides). */
+export function videoPosition(v: RoomVideo): number {
+  if (v.state !== 'playing' || !v.updated_at) return v.position;
+  const since = (v.now ? Date.parse(v.now) : Date.now()) - Date.parse(v.updated_at);
+  return v.position + Math.max(0, since) / 1000;
+}
+
 /** `Api\RoomController::snapshot()` — verified against the controller. */
 export type RoomSnapshot = {
   room: {
@@ -59,6 +81,8 @@ export type RoomSnapshot = {
     diamonds: number;
     video_enabled: boolean;
     announcement: string | null;
+    /** Cinema mode: on/off and the shared player's state. */
+    video?: RoomVideo;
     theme: { background_url: string | null } | null;
     /** The host's own upload, else the theme's picture. */
     background_url: string | null;
@@ -417,6 +441,10 @@ export function useRoom(uuid: string) {
       );
       soon();
     });
+    // Cinema mode: the owner switched it, loaded a video, or played / paused / seeked it.
+    channel.listen('.room.video', (e: { video: RoomVideo }) => {
+      setSnapshot((prev) => (prev ? { ...prev, room: { ...prev.room, video: e.video } } : prev));
+    });
     for (const ev of ['.camera.toggled', '.hand.toggled', '.room.announcement_changed']) {
       channel.listen(ev, soon);
     }
@@ -468,6 +496,29 @@ export function useRoom(uuid: string) {
   const nextEntrance = useCallback(() => setEntrances((q) => q.slice(1)), []);
 
   /** Every action answers with a fresh snapshot or nothing; either way, re-read. */
+  const setVideo = useCallback(
+    async (v: { cinema?: boolean; ref?: string; title?: string | null; state?: RoomVideo['state']; position?: number }) => {
+      setSnapshot((prev) => {
+        if (!prev) return prev;
+        const cur: RoomVideo = prev.room.video ?? { on: false, id: null, title: null, state: 'stopped', position: 0, updated_at: null };
+        const on = v.cinema ?? cur.on;
+        let next: RoomVideo = { ...cur, on, now: new Date().toISOString(), updated_at: new Date().toISOString() };
+        if (!on || v.state === 'stopped') next = { ...next, id: null, title: null, state: 'stopped', position: 0 };
+        else if (v.ref) next = { ...next, id: v.ref, title: v.title ?? null, state: 'playing', position: v.position ?? 0 };
+        else if (cur.id) next = { ...next, state: v.state ?? cur.state, position: v.position ?? cur.position };
+        return { ...prev, room: { ...prev.room, video: next } };
+      });
+      try {
+        const res = await api<RoomVideo>(`${path}/video`, { method: 'PATCH', body: v, token });
+        if (res && typeof res === 'object' && 'on' in res) setSnapshot((prev) => (prev ? { ...prev, room: { ...prev.room, video: res } } : prev));
+      } catch (e) {
+        refreshState();
+        throw e;
+      }
+    },
+    [path, refreshState, token],
+  );
+
   const act = useCallback(
     async (p: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown) => {
       try {
@@ -606,6 +657,11 @@ export function useRoom(uuid: string) {
     changeMode: (seatTemplateId: number) => act('/mode', 'PATCH', { seat_template_id: seatTemplateId }),
     /** Room Theme: a catalogue theme, or the host's own uploaded picture. */
     changeTheme: (pick: { theme_id: number } | { background_url: string }) => act('/theme', 'PATCH', pick),
+    /**
+     * Owner: cinema mode. `cinema` switches it, `ref` (+ `title`) loads and plays a YouTube id, `state` /
+     * `position` play, pause or seek. Drawn here at once; the server's broadcast then settles it for all.
+     */
+    setVideo,
     sendMessage,
     sendGift,
     envelopes,

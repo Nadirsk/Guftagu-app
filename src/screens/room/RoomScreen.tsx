@@ -56,6 +56,7 @@ import {
 import { type ChatMessage, type GiftEvent, type RoomEnvelope, type RoomUser, type Seat } from './useRoom';
 import { UserAvatar } from '../../components/UserAvatar';
 import { RoomModeSheet, RoomThemeSheet, type SeatTemplate } from './roomSettings';
+import { CINEMA_SEAT_DROP, CinemaBar, CinemaChair, CinemaSeatsSheet, CinemaStage, VideoLibrarySheet } from './cinemaSheets';
 import { MusicSheet } from './musicSheet';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -81,6 +82,9 @@ type Overlay =
   | { kind: 'announcement' }
   | { kind: 'leave' }
   | { kind: 'tools' }
+  | { kind: 'cinemaBar' }
+  | { kind: 'cinemaVideos' }
+  | { kind: 'cinemaSeats' }
   | { kind: 'kickout'; user: RoomUser }
   | { kind: 'seatMenu' }
   | { kind: 'hostSeatMenu'; seat: Seat }
@@ -231,7 +235,13 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
   const seats = snapshot?.seats ?? [];
   const mySeat = seats.find((x) => x.user?.uuid === me?.uuid) ?? null;
   // Mazag's first seat row sits ~11 px under the "Top Room" pill, so the whole block rides up.
-  const spots = useMemo(() => seatSpots(seats.length).map((s) => ({ ...s, y: s.y + SEAT_LIFT, labelY: s.labelY + SEAT_LIFT })), [seats.length]);
+  // Cinema mode (Figma 769:10917) is the room's shared state: the owner switches it and loads the video,
+  // and every member follows through `snapshot.room.video`. Only the sound is each person's own.
+  const video = snapshot?.room.video;
+  const cinemaOn = Boolean(video?.on);
+  const [videoMuted, setVideoMuted] = useState(false);
+  const seatLift = cinemaOn ? SEAT_LIFT + CINEMA_SEAT_DROP : SEAT_LIFT;
+  const spots = useMemo(() => seatSpots(seats.length).map((s) => ({ ...s, y: s.y + seatLift, labelY: s.labelY + seatLift })), [seats.length, seatLift]);
   // Everything from the notice down follows the last row of seats.
   // Full-size layouts with fewer rows than Figma's ten pull the notice up; the
   // shrunk 20/40 grids are fitted inside the frame's own seat block, so they don't.
@@ -331,6 +341,21 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
         return;
       }
       setOverlay({ kind: key });
+    } else if (key === 'videos') {
+      if (!isOwner) {
+        toast.show('Only the room owner can do that');
+        return;
+      }
+      // The Videos tool is a switch: voice room → cinema (and the video list), cinema → voice room.
+      if (cinemaOn) {
+        run(() => room.setVideo({ cinema: false }));
+        setVideoMuted(false);
+        setOverlay(null);
+        toast.show('Voice room');
+      } else {
+        run(() => room.setVideo({ cinema: true }));
+        setOverlay({ kind: 'cinemaVideos' });
+      }
     } else if (key === 'redPacket') {
       setOverlay({ kind: 'envelope' });
     } else if (key === 'kick' || key === 'mute' || key === 'lock') {
@@ -446,7 +471,7 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
       {/* 34:2257's fill, then the cover photo at half opacity (34:2258). */}
       <LinearGradient colors={BACKDROP.colors} locations={BACKDROP.locations} style={StyleSheet.absoluteFill} />
       <Image
-        source={theme ? { uri: theme } : require('../../assets/room/background.jpg')}
+        source={cinemaOn ? require('../../assets/room/cinema/theatre-bg.jpg') : theme ? { uri: theme } : require('../../assets/room/background.jpg')}
         resizeMode="cover"
         style={{
           position: 'absolute',
@@ -509,6 +534,17 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
         <TopRoomPill onPress={() => toast.show('Coming soon')} />
       </View>
 
+      {/* ------------------------------------------------ cinema video band */}
+      {cinemaOn && video ? (
+        <CinemaStage
+          video={video}
+          muted={videoMuted}
+          owner={isOwner}
+          onReport={(state, position) => run(() => room.setVideo({ state, position }))}
+          onControls={() => setOverlay({ kind: 'cinemaBar' })}
+        />
+      ) : null}
+
       {/* ------------------------------------------------ seats */}
       {seats.map((seat, i) => (
         <SeatView
@@ -517,6 +553,7 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
           spot={spots[i]}
           mine={seat.user?.uuid === me?.uuid}
           picking={seatMode !== null}
+          cinema={cinemaOn}
           speaking={Boolean(seat.user && voice.speaking.has(seat.user.uuid))}
           invite={!mySeat && seat.seat_number === inviteSeat}
           onPress={() => onSeat(seat)}
@@ -852,7 +889,39 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
           }}
         /> : null}
       {overlay?.kind === 'leave' ? <LeaveDialog busy={leaving} onCancel={() => setOverlay(null)} onConfirm={leave} /> : null}
-      {overlay?.kind === 'tools' ? <ToolsSheet extra={extra} owner={isOwner} onClose={() => setOverlay(null)} onPick={onTool} /> : null}
+      {overlay?.kind === 'tools' ? <ToolsSheet extra={extra} owner={isOwner} cinema={cinemaOn} onClose={() => setOverlay(null)} onPick={onTool} /> : null}
+      {overlay?.kind === 'cinemaBar' ? (
+        <CinemaBar
+          extra={extra}
+          muted={videoMuted}
+          playing={Boolean(video?.id)}
+          onClose={() => setOverlay(null)}
+          onSeats={() => setOverlay({ kind: 'cinemaSeats' })}
+          onVideos={() => setOverlay({ kind: 'cinemaVideos' })}
+          onToggleSound={() => setVideoMuted((m) => !m)}
+          onStop={() => {
+            // Power: stop the video, or, with nothing playing, close the band again.
+            if (video?.id) run(() => room.setVideo({ state: 'stopped' }));
+            else {
+              run(() => room.setVideo({ cinema: false }));
+              setVideoMuted(false);
+            }
+            setOverlay(null);
+          }}
+        />
+      ) : null}
+      {overlay?.kind === 'cinemaVideos' ? (
+        <VideoLibrarySheet onClose={() => setOverlay(null)} onPlay={(id, title) => run(() => room.setVideo({ cinema: true, ref: id, title }))} />
+      ) : null}
+      {overlay?.kind === 'cinemaSeats' ? (
+        <CinemaSeatsSheet
+          extra={extra}
+          current={snapshot?.room.seat_template_id}
+          busy={settingsBusy}
+          onApply={pickMode}
+          onClose={() => setOverlay(null)}
+        />
+      ) : null}
       {overlay?.kind === 'wheel' ? (
         <LuckyWheelSheet
           roomUuid={params.uuid}
@@ -966,7 +1035,7 @@ function RoomScreenBody({ rt }: { rt: RoomRuntime }) {
 
 // ---------------------------------------------------------------- pieces
 
-function SeatView({ seat, spot, mine, picking, speaking, invite, onPress }: { seat: Seat; spot: SeatSpot; mine: boolean; picking: boolean; speaking: boolean; invite: boolean; onPress: () => void }) {
+function SeatView({ seat, spot, mine, picking, speaking, invite, cinema = false, onPress }: { seat: Seat; spot: SeatSpot; mine: boolean; picking: boolean; speaking: boolean; invite: boolean; cinema?: boolean; onPress: () => void }) {
   const { px } = useDesignScale();
   // Every part of a seat is Figma's 47.053 one, scaled to this layout's ring.
   const k = spot.ring / SEAT.ring;
@@ -987,9 +1056,14 @@ function SeatView({ seat, spot, mine, picking, speaking, invite, onPress }: { se
         )
       ) : null}
       {invite ? <InviteHint x={spot.x} y={spot.y} size={spot.ring} /> : null}
-      <View pointerEvents="none" style={{ position: 'absolute', left: px(spot.x + ring.dx * k), top: px(spot.y + ring.dy * k), opacity: picking ? 0.75 : 1 }}>
-        <SvgXml xml={seat.is_vip ? GOLD_SEAT_RING : icons.seatRing} width={px(ring.size * k)} height={px(ring.size * k)} />
-      </View>
+      {cinema ? (
+        // Cinema room: Figma's red armchair + glass ring replace the pink ring; the "+" shows on empty seats.
+        <CinemaChair x={spot.x} y={spot.y} ring={spot.ring} empty={!seat.user && !seat.locked} />
+      ) : (
+        <View pointerEvents="none" style={{ position: 'absolute', left: px(spot.x + ring.dx * k), top: px(spot.y + ring.dy * k), opacity: picking ? 0.75 : 1 }}>
+          <SvgXml xml={seat.is_vip ? GOLD_SEAT_RING : icons.seatRing} width={px(ring.size * k)} height={px(ring.size * k)} />
+        </View>
+      )}
       <Pressable
         onPress={onPress}
         style={{ position: 'absolute', left: px(spot.x), top: px(spot.y), width: px(spot.ring), height: px(spot.ring), borderRadius: px(spot.ring / 2), alignItems: 'center', justifyContent: 'center' }}
@@ -1006,7 +1080,7 @@ function SeatView({ seat, spot, mine, picking, speaking, invite, onPress }: { se
         ) : seat.locked ? (
           // Same pink seat; only the chair glyph is swapped for Mazag's round padlock.
           <Image source={require('../../assets/room/mz/seat-lock-glyph.png')} style={{ width: px(spot.ring * 0.36), height: px(spot.ring * 0.36), opacity: picking ? 0.75 : 1, tintColor: seat.is_vip ? SEAT_GOLD : undefined }} />
-        ) : (
+        ) : cinema ? null : (
           // Centred in the ring, as Figma renders it — the export's (3, 2) mask offset
           // inside the Seat box reads as off-centre once drawn literally.
           <SvgXml xml={icons.seat} color={tint} width={px(SEAT.glyph.width * k)} height={px(SEAT.glyph.height * k)} />
@@ -1025,7 +1099,10 @@ function SeatView({ seat, spot, mine, picking, speaking, invite, onPress }: { se
           numberOfLines={1}
           style={[
             styles.medium,
-            { position: 'absolute', left: px(spot.labelX - SEAT.label.width / 2), width: px(SEAT.label.width), top: px(spot.labelY), fontSize: px(spot.labelSize), color: '#F0EEFF', textAlign: 'center' },
+            cinema
+              ? // Figma: the number sits under the armchair, 21 px regular white (y = ring top + 56).
+                { position: 'absolute', left: px(spot.x + spot.ring / 2 - SEAT.label.width / 2), width: px(SEAT.label.width), top: px(spot.y + (56 * spot.ring) / 49), fontSize: px((21 * spot.ring) / 49), color: '#FFFFFF', textAlign: 'center', fontFamily: typography.fontFamily.regular }
+              : { position: 'absolute', left: px(spot.labelX - SEAT.label.width / 2), width: px(SEAT.label.width), top: px(spot.labelY), fontSize: px(spot.labelSize), color: '#F0EEFF', textAlign: 'center' },
           ]}
         >
           {seat.seat_number}
